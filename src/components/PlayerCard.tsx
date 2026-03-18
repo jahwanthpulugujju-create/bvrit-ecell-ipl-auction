@@ -1,5 +1,5 @@
 import { Player, roleEmojis } from '@/data/players';
-import { useAuction } from '@/context/AuctionContext';
+import { useAuction, formatPrice } from '@/context/AuctionContext';
 
 const roleColors: Record<string, string> = {
   'batsman': 'role-batsman',
@@ -31,7 +31,7 @@ interface Props {
 }
 
 export default function PlayerCard({ player, compact }: Props) {
-  const { formatPrice, getTeam } = useAuction();
+  const { getTeam } = useAuction();
   const team = player.soldToTeamId ? getTeam(player.soldToTeamId) : null;
 
   if (compact) {

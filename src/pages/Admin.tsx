@@ -1,14 +1,17 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useAuction, formatPrice } from '@/context/AuctionContext';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useAuction, formatPrice, TeamDB, TeamPlayerFreeze } from '@/context/AuctionContext';
 import AuctionTimer, { TimerBar } from '@/components/AuctionTimer';
-import PlayerCard from '@/components/PlayerCard';
+import ConnectionStatus from '@/components/ConnectionStatus';
 import { roleEmojis, Player } from '@/data/players';
-import { createTeamSlug, generateTeamPassword, hashTeamPassword, EMPTY_ROLE_COUNTS, Team } from '@/data/teams';
-import { Search, Play, Pause, RotateCcw, Hammer, X, Undo2, Users, Settings, BarChart3, Eye, Plus, Key, Lock, Unlock, Copy, Download, Trash2, Edit2, Megaphone, DollarSign, ChevronDown, ChevronUp, Eye as EyeIcon, EyeOff } from 'lucide-react';
+import { createTeamSlug, generateTeamPassword, hashTeamPassword, MIN_ROLE_REQUIREMENTS } from '@/data/teams';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import ConnectionStatus from '@/components/ConnectionStatus';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import { playFreezeRejected, toggleMute, getMuted } from '@/lib/sounds';
+import {
+  Search, Play, Pause, RotateCcw, Hammer, X, Users, BarChart3, Eye, Plus,
+  Download, Trash2, Edit2, Megaphone, DollarSign, EyeOff, Volume2, VolumeX,
+} from 'lucide-react';
+
 
 export default function Admin() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('admin_auth') === '1');
@@ -20,14 +23,14 @@ export default function Admin() {
     if (pw === 'BVRIT2026') {
       sessionStorage.setItem('admin_auth', '1');
       setAuthed(true);
-      await supabase.auth.signInAnonymously();
+      await supabase.auth.signInAnonymously().catch(() => {});
     } else {
       setPwError(true);
     }
   };
 
   useEffect(() => {
-    if (authed) { supabase.auth.signInAnonymously().catch(() => {}); }
+    if (authed) supabase.auth.signInAnonymously().catch(() => {});
   }, [authed]);
 
   if (!authed) {
@@ -37,14 +40,11 @@ export default function Admin() {
           <h1 className="font-orbitron text-2xl text-foreground mb-2">Admin Access</h1>
           <p className="text-muted-foreground text-sm mb-6">Enter the auctioneer password</p>
           <input
-            type="password"
-            value={pw}
+            type="password" value={pw}
             onChange={e => { setPw(e.target.value); setPwError(false); }}
             onKeyDown={e => e.key === 'Enter' && handleAuth()}
             placeholder="Password"
-            className={`w-full bg-card border rounded-lg px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none mb-4 ${
-              pwError ? 'border-accent-crimson focus:border-accent-crimson' : 'border-border focus:border-accent-cyan/40'
-            }`}
+            className={`w-full bg-card border rounded-lg px-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none mb-4 ${pwError ? 'border-accent-crimson' : 'border-border focus:border-accent-cyan/40'}`}
           />
           {pwError && <p className="text-accent-crimson text-xs mb-4">Incorrect password</p>}
           <button onClick={handleAuth} className="btn-primary w-full">Unlock</button>
@@ -65,19 +65,14 @@ export default function Admin() {
       <div className="glass-navbar sticky top-16 z-40">
         <div className="container mx-auto px-4 flex gap-1 overflow-x-auto py-2">
           {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                activeTab === t.id ? 'bg-accent-cyan/10 text-accent-cyan' : 'text-muted-foreground hover:text-foreground'
-              }`}
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${activeTab === t.id ? 'bg-accent-cyan/10 text-accent-cyan' : 'text-muted-foreground hover:text-foreground'}`}
             >
               {t.icon} {t.label}
             </button>
           ))}
         </div>
       </div>
-
       <div className="container mx-auto px-4 py-6">
         {activeTab === 'auction' && <AuctionControl />}
         {activeTab === 'players' && <PlayerManagement />}
@@ -88,214 +83,288 @@ export default function Admin() {
   );
 }
 
-function useSupabaseSync() {
-  const { state } = useAuction();
-
-  const syncAuctionState = useCallback(async (updates: Record<string, any>) => {
-    await supabase.from('auction_state').update({ ...updates, updated_at: new Date().toISOString() }).eq('id', 1);
-  }, []);
-
-  const syncBid = useCallback(async (playerId: string, teamId: string, amount: number, freezeExpiresAt: number, freezeSeconds: number) => {
-    await Promise.all([
-      supabase.from('bids').insert({ player_id: playerId, team_id: teamId, amount }),
-      supabase.from('team_player_freezes').upsert({
-        team_id: teamId, player_id: playerId,
-        freeze_expires_at: freezeExpiresAt, freeze_seconds: freezeSeconds, bid_amount: amount,
-      }, { onConflict: 'team_id,player_id' }),
-    ]);
-  }, []);
-
-  const syncSell = useCallback(async (playerId: string, teamId: string, price: number) => {
-    await Promise.all([
-      supabase.from('players').update({ status: 'sold', sold_to_team_id: teamId, sold_price: price, updated_at: new Date().toISOString() }).eq('id', playerId),
-      supabase.from('teams').update({ purse: state.teams.find(t => t.id === teamId)!.purse - price, updated_at: new Date().toISOString() }).eq('id', teamId),
-      supabase.from('team_squads').upsert({ team_id: teamId, player_id: playerId, purchase_price: price }, { onConflict: 'team_id,player_id' }),
-      supabase.from('team_player_freezes').delete().eq('player_id', playerId),
-      supabase.from('auction_log').insert({ type: 'sold', player_id: playerId, team_id: teamId, amount: price, message: `Sold for ${formatPrice(price)}` }),
-    ]);
-  }, [state.teams]);
-
-  const syncUnsold = useCallback(async (playerId: string) => {
-    await Promise.all([
-      supabase.from('players').update({ status: 'unsold', updated_at: new Date().toISOString() }).eq('id', playerId),
-      supabase.from('team_player_freezes').delete().eq('player_id', playerId),
-      supabase.from('auction_log').insert({ type: 'unsold', player_id: playerId, message: 'Went unsold' }),
-    ]);
-  }, []);
-
-  return { syncAuctionState, syncBid, syncSell, syncUnsold };
-}
-
-function FreezeRing({ teamId, playerId, freezeExpiresAt, freezeSeconds }: { teamId: string; playerId: string; freezeExpiresAt: number; freezeSeconds: number }) {
-  const [remaining, setRemaining] = useState(Math.max(0, freezeExpiresAt - Date.now()));
-
+function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): number {
+  const [seconds, setSeconds] = useState(15);
   useEffect(() => {
     const tick = () => {
-      const rem = Math.max(0, freezeExpiresAt - Date.now());
-      setRemaining(rem);
+      if (timerExpiresAt) {
+        setSeconds(Math.max(0, Math.floor((timerExpiresAt - Date.now()) / 1000)));
+      } else {
+        setSeconds(15);
+      }
     };
     tick();
-    const interval = setInterval(tick, 100);
-    return () => clearInterval(interval);
-  }, [freezeExpiresAt]);
+    const iv = setInterval(tick, 500);
+    return () => clearInterval(iv);
+  }, [timerExpiresAt, timerRunning]);
+  return seconds;
+}
 
-  if (remaining <= 0) return null;
-
-  const total = freezeSeconds * 1000;
-  const pct = (remaining / total) * 100;
+function FreezeRingSvg({ freeze, localFreezeMs }: { freeze: TeamPlayerFreeze; localFreezeMs: number }) {
+  const totalMs = freeze.freeze_seconds * 1000;
+  const pct = totalMs > 0 ? Math.max(0, localFreezeMs / totalMs) * 100 : 0;
   const dashOffset = 100 - pct;
-
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 rounded-lg">
-      <svg viewBox="0 0 36 36" className="w-12 h-12" style={{ transform: 'rotate(-90deg)' }}>
+      <svg viewBox="0 0 36 36" className="w-12 h-12 absolute" style={{ transform: 'rotate(-90deg)' }}>
         <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(245,158,11,0.2)" strokeWidth="3" />
-        <circle
-          cx="18" cy="18" r="15.9" fill="none"
-          stroke="hsl(51 100% 50%)"
-          strokeWidth="3"
-          strokeDasharray="100"
-          strokeDashoffset={dashOffset}
-          strokeLinecap="round"
+        <circle cx="18" cy="18" r="15.9" fill="none" stroke="hsl(51 100% 50%)"
+          strokeWidth="3" strokeDasharray="100" strokeDashoffset={dashOffset} strokeLinecap="round"
           style={{ filter: 'drop-shadow(0 0 4px hsl(51 100% 50%))', transition: 'stroke-dashoffset 100ms linear' }}
         />
       </svg>
-      <span className="absolute font-mono text-[11px] text-accent-gold font-bold" style={{ transform: 'none' }}>
-        🔒 {Math.ceil(remaining / 1000)}s
+      <span className="relative font-mono text-[11px] text-accent-gold font-bold">
+        🔒 {Math.ceil(localFreezeMs / 1000)}s
       </span>
     </div>
   );
 }
 
-function AuctionControl() {
-  const { state, dispatch, getPlayer } = useAuction();
-  const { syncAuctionState, syncBid, syncSell, syncUnsold } = useSupabaseSync();
-  const [channel, setChannel] = useState<RealtimeChannel | null>(null);
-  const currentPlayer = state.currentPlayerId ? getPlayer(state.currentPlayerId) : null;
-  const leadingTeam = state.leadingTeamId ? state.teams.find(t => t.id === state.leadingTeamId) : null;
-  const [search, setSearch] = useState('');
-  const [showSold, setShowSold] = useState(false);
-  const [soldPlayerName, setSoldPlayerName] = useState('');
-  const [soldTeamName, setSoldTeamName] = useState('');
+function TeamBidButton({ team }: { team: TeamDB }) {
+  const { auctionState, freezes, globalCooldowns, registerBid, players } = useAuction();
+  const { toast } = useToast();
+  const [localFreezeMs, setLocalFreezeMs] = useState(0);
+  const [globalMs, setGlobalMs] = useState(0);
+  const [showQuickView, setShowQuickView] = useState(false);
+  const [justExpired, setJustExpired] = useState(false);
+
+  const currentPlayerId = auctionState?.current_player_id;
 
   useEffect(() => {
-    const ch = supabase.channel('admin-auction-status');
-    setChannel(ch);
-    ch.subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, []);
+    if (!currentPlayerId) { setLocalFreezeMs(0); return; }
+    const freeze = freezes.find(f => f.team_id === team.id && f.player_id === currentPlayerId && f.freeze_expires_at > Date.now());
+    if (!freeze) { setLocalFreezeMs(0); return; }
+    const tick = setInterval(() => {
+      const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
+      setLocalFreezeMs(rem);
+      if (rem <= 0) {
+        clearInterval(tick);
+        setJustExpired(true);
+        setTimeout(() => setJustExpired(false), 300);
+      }
+    }, 100);
+    return () => clearInterval(tick);
+  }, [freezes, team.id, currentPlayerId]);
 
-  const availablePlayers = state.players.filter(p =>
-    p.status === 'available' && p.name.toLowerCase().includes(search.toLowerCase())
-  ).slice(0, 10);
+  useEffect(() => {
+    const gc = globalCooldowns[team.id];
+    if (!gc || gc.global_expires_at <= Date.now()) { setGlobalMs(0); return; }
+    const tick = setInterval(() => {
+      const rem = Math.max(0, gc.global_expires_at - Date.now());
+      setGlobalMs(rem);
+      if (rem <= 0) clearInterval(tick);
+    }, 100);
+    return () => clearInterval(tick);
+  }, [globalCooldowns, team.id]);
+
+  const isFrozen = localFreezeMs > 0;
+  const isGlobal = globalMs > 0;
+  const isLeading = team.id === auctionState?.leading_team_id;
+  const canAfford = auctionState
+    ? team.purse >= (auctionState.leading_team_id ? auctionState.current_bid_amount + auctionState.bid_increment : auctionState.current_bid_amount)
+    : false;
+
+  const currentFreeze = freezes.find(f => f.team_id === team.id && f.player_id === currentPlayerId);
+
+  async function handleClick() {
+    if (isFrozen || isGlobal || isLeading || !canAfford) return;
+    const result = await registerBid(team.id);
+    if (!result.success) {
+      if (result.reason === 'PLAYER_COOLDOWN') {
+        toast({ title: `⏳ ${team.name} frozen — ${result.remainingSeconds}s remaining`, variant: 'destructive' });
+        playFreezeRejected();
+      } else if (result.reason === 'GLOBAL_COOLDOWN') {
+        toast({ title: `⚡ Throttle — wait ${result.remainingSeconds}s`, variant: 'destructive' });
+      } else if (result.reason === 'INSUFFICIENT_PURSE') {
+        toast({ title: `Insufficient purse — ${formatPrice(result.purseRemaining)} remaining`, variant: 'destructive' });
+      } else if (result.reason === 'NO_CURRENT_PLAYER') {
+        toast({ title: 'No player selected', variant: 'destructive' });
+      }
+    }
+  }
+
+  const teamSquad = players.filter(p => p.soldToTeamId === team.id);
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        onContextMenu={e => { e.preventDefault(); setShowQuickView(v => !v); }}
+        disabled={!canAfford && !isFrozen}
+        title={isFrozen ? `Frozen: ${Math.ceil(localFreezeMs / 1000)}s` : isLeading ? 'Leading' : 'Right-click for quick view'}
+        className={`relative p-3 rounded-lg text-sm font-semibold transition-all border-2 overflow-hidden ${
+          isLeading ? 'border-accent-emerald bg-accent-emerald/10 text-accent-emerald' :
+          isFrozen ? 'border-accent-gold/70 bg-accent-gold/10 cursor-not-allowed' :
+          justExpired ? 'border-accent-emerald bg-accent-emerald/15' :
+          canAfford ? 'border-border bg-card text-foreground hover:border-accent-cyan/50 hover:-translate-y-0.5 cursor-pointer' :
+          'border-border bg-card/50 text-muted-foreground opacity-50 cursor-not-allowed'
+        }`}
+        style={canAfford && !isLeading && !isFrozen ? { borderColor: team.color + '60' } : {}}
+      >
+        {isFrozen && currentFreeze && <FreezeRingSvg freeze={currentFreeze} localFreezeMs={localFreezeMs} />}
+        <div className="h-1 w-full rounded mb-2 -mx-0 absolute top-0 left-0 right-0" style={{ background: team.color }} />
+        <div className="pt-1">
+          <div className="truncate font-exo">{team.name}</div>
+          <div className="font-mono text-xs mt-0.5 text-muted-foreground">{formatPrice(team.purse)}</div>
+          {teamSquad.length > 0 && <div className="text-[10px] text-muted-foreground/70">{teamSquad.length} players</div>}
+        </div>
+      </button>
+      {showQuickView && <TeamQuickView team={team} onClose={() => setShowQuickView(false)} />}
+    </>
+  );
+}
+
+function TeamQuickView({ team, onClose }: { team: TeamDB; onClose: () => void }) {
+  const { players, freezes, auctionState, clearTeamFreeze } = useAuction();
+  const squadPlayers = players.filter(p => p.soldToTeamId === team.id);
+  const currentFreeze = freezes.find(f =>
+    f.team_id === team.id &&
+    f.player_id === auctionState?.current_player_id &&
+    f.freeze_expires_at > Date.now()
+  );
+  const [freezeMs, setFreezeMs] = useState(currentFreeze ? Math.max(0, currentFreeze.freeze_expires_at - Date.now()) : 0);
+
+  useEffect(() => {
+    if (!currentFreeze) return;
+    const iv = setInterval(() => setFreezeMs(Math.max(0, currentFreeze.freeze_expires_at - Date.now())), 200);
+    return () => clearInterval(iv);
+  }, [currentFreeze]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-card border-2 border-border rounded-xl w-full max-w-sm shadow-2xl overflow-hidden" style={{ borderTopColor: team.color, borderTopWidth: 3 }}>
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <h3 className="font-exo font-bold text-foreground">{team.name}</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted/50 text-muted-foreground"><X size={16} /></button>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="bg-muted/30 rounded p-2 text-center">
+              <div className="text-muted-foreground">Purse</div>
+              <div className="font-mono text-accent-cyan font-bold">{formatPrice(team.purse)}</div>
+            </div>
+            <div className="bg-muted/30 rounded p-2 text-center">
+              <div className="text-muted-foreground">Squad</div>
+              <div className="font-mono font-bold">{squadPlayers.length}</div>
+            </div>
+            <div className="bg-muted/30 rounded p-2 text-center">
+              <div className="text-muted-foreground">RTM</div>
+              <div className="font-mono text-accent-purple font-bold">{team.rtm_remaining}</div>
+            </div>
+          </div>
+
+          {currentFreeze && freezeMs > 0 && (
+            <div className="bg-accent-gold/10 border border-accent-gold/30 rounded-lg p-3 flex items-center justify-between">
+              <span className="text-xs text-accent-gold">🔒 Frozen: {Math.ceil(freezeMs / 1000)}s</span>
+              <button
+                onClick={async () => { if (confirm(`Clear freeze for ${team.name}?`)) await clearTeamFreeze(team.id, auctionState!.current_player_id!); }}
+                className="text-xs bg-accent-gold/20 hover:bg-accent-gold/30 text-accent-gold px-2 py-1 rounded transition-colors"
+              >🔓 Clear</button>
+            </div>
+          )}
+
+          <div>
+            <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-2">ROLE COMPOSITION</div>
+            {Object.entries(MIN_ROLE_REQUIREMENTS).map(([role, min]) => {
+              const count = squadPlayers.filter(p => p.role === role).length;
+              const ok = count >= min;
+              return (
+                <div key={role} className="flex items-center justify-between text-xs py-1 border-b border-border/30">
+                  <span className="text-muted-foreground">{roleEmojis[role]} {role.replace('-', ' ')}</span>
+                  <span className={ok ? 'text-accent-emerald' : 'text-accent-crimson'}>
+                    {count}{min > 0 ? ` / min ${min}` : ''} {ok ? '✓' : '⚠'}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {squadPlayers.length > 0 && (
+            <div className="max-h-40 overflow-auto space-y-1">
+              <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1">SQUAD</div>
+              {squadPlayers.map(p => (
+                <div key={p.id} className="flex items-center justify-between text-xs py-1">
+                  <span className="text-foreground truncate">{p.name}</span>
+                  <span className="font-mono text-accent-cyan ml-2">{p.soldPrice ? formatPrice(p.soldPrice) : '—'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuctionControl() {
+  const {
+    auctionState, players, teams, freezes,
+    setCurrentPlayer, confirmSale, markUnsold,
+    startTimer, pauseTimer, resetTimer,
+    setStatus, setBidIncrement,
+  } = useAuction();
+  const { toast } = useToast();
+  const [search, setSearch] = useState('');
+  const [showSold, setShowSold] = useState(false);
+  const [soldInfo, setSoldInfo] = useState({ player: '', team: '' });
+  const [muted, setMuted] = useState(getMuted);
+
+  const timerSeconds = useLocalTimer(auctionState?.timer_expires_at ?? null, auctionState?.timer_running ?? false);
+
+  const currentPlayer = auctionState?.current_player_id ? players.find(p => p.id === auctionState.current_player_id) : null;
+  const leadingTeam = auctionState?.leading_team_id ? teams.find(t => t.id === auctionState.leading_team_id) : null;
+
+  const availablePlayers = useMemo(() =>
+    players.filter(p => p.status === 'available' && p.name.toLowerCase().includes(search.toLowerCase())).slice(0, 10),
+    [players, search]
+  );
 
   const increments = [
-    { label: '₹5L', value: 5 },
-    { label: '₹10L', value: 10 },
-    { label: '₹25L', value: 25 },
-    { label: '₹50L', value: 50 },
-    { label: '₹1Cr', value: 100 },
+    { label: '₹5L', value: 5 }, { label: '₹10L', value: 10 }, { label: '₹25L', value: 25 },
+    { label: '₹50L', value: 50 }, { label: '₹1Cr', value: 100 },
   ];
 
-  const handleSetPlayer = async (playerId: string) => {
-    const player = state.players.find(p => p.id === playerId);
-    if (!player) return;
-    dispatch({ type: 'SET_CURRENT_PLAYER', playerId });
-    await syncAuctionState({
-      current_player_id: playerId,
-      current_bid_amount: player.basePrice,
-      leading_team_id: null,
-      timer_running: false,
-      timer_expires_at: null,
-      status: 'live',
-    });
-    await supabase.from('players').update({ status: 'live' }).eq('id', playerId);
-  };
-
-  const handleBid = async (teamId: string) => {
-    const team = state.teams.find(t => t.id === teamId);
-    if (!team || !state.currentPlayerId) return;
-    const newBid = state.leadingTeamId ? state.currentBid + state.bidIncrement : state.currentBid;
-    if (team.purse < newBid) return;
-    const freeze = state.freezes.find(f => f.teamId === teamId && f.playerId === state.currentPlayerId && f.freezeExpiresAt > Date.now());
-    if (freeze) return;
-    dispatch({ type: 'PLACE_BID', teamId });
-    const bidIncrInState = state.leadingTeamId ? state.bidIncrement : 0;
-    const actualNewBid = state.leadingTeamId ? state.currentBid + state.bidIncrement : state.currentBid;
-    const freezeSecs = Math.min(Math.max(3, 3 + Math.floor(actualNewBid / 20) * 2), 30);
-    const now = Date.now();
-    const freezeExpiresAt = now + freezeSecs * 1000;
-    const timerExpiresAt = now + 15000;
-    await Promise.all([
-      syncAuctionState({
-        current_bid_amount: actualNewBid,
-        leading_team_id: teamId,
-        timer_running: true,
-        timer_expires_at: timerExpiresAt,
-      }),
-      syncBid(state.currentPlayerId, teamId, actualNewBid, freezeExpiresAt, freezeSecs),
-    ]);
-  };
-
   const handleSell = async () => {
-    if (!state.leadingTeamId || !state.currentPlayerId) return;
-    const player = getPlayer(state.currentPlayerId);
-    const team = state.teams.find(t => t.id === state.leadingTeamId);
+    if (!auctionState?.leading_team_id || !auctionState.current_player_id) return;
+    const player = players.find(p => p.id === auctionState.current_player_id);
+    const team = teams.find(t => t.id === auctionState.leading_team_id);
     if (!player || !team) return;
-    if (!window.confirm(`Sell ${player.name} to ${team.name} for ${formatPrice(state.currentBid)}?`)) return;
-    setSoldPlayerName(player.name);
-    setSoldTeamName(team.name);
-    dispatch({ type: 'SELL_PLAYER' });
+    if (!window.confirm(`Sell ${player.name} to ${team.name} for ${formatPrice(auctionState.current_bid_amount)}?`)) return;
+    setSoldInfo({ player: player.name, team: team.name });
     setShowSold(true);
     setTimeout(() => setShowSold(false), 3000);
-    await syncSell(player.id, team.id, state.currentBid);
-    await syncAuctionState({ current_player_id: null, current_bid_amount: 0, leading_team_id: null, timer_running: false });
+    await confirmSale();
   };
 
   const handleUnsold = async () => {
-    if (!state.currentPlayerId) return;
-    const player = getPlayer(state.currentPlayerId);
-    if (!player) return;
-    if (!window.confirm(`Mark ${player.name} as unsold?`)) return;
-    dispatch({ type: 'MARK_UNSOLD' });
-    await syncUnsold(player.id);
-    await syncAuctionState({ current_player_id: null, current_bid_amount: 0, leading_team_id: null, timer_running: false });
+    if (!auctionState?.current_player_id) return;
+    const player = players.find(p => p.id === auctionState.current_player_id);
+    if (!window.confirm(`Mark ${player?.name} as unsold?`)) return;
+    await markUnsold();
   };
 
-  const handleStartTimer = async () => {
-    dispatch({ type: 'START_TIMER' });
-    await syncAuctionState({ timer_running: true, timer_expires_at: Date.now() + state.timerSeconds * 1000 });
-  };
-
-  const handlePauseTimer = async () => {
-    dispatch({ type: 'PAUSE_TIMER' });
-    await syncAuctionState({ timer_running: false });
-  };
-
-  const handleResetTimer = async () => {
-    dispatch({ type: 'RESET_TIMER', seconds: 15 });
-    await syncAuctionState({ timer_running: false, timer_expires_at: null });
-  };
+  const soldCount = players.filter(p => p.status === 'sold').length;
+  const totalValue = players.filter(p => p.status === 'sold').reduce((s, p) => s + (p.soldPrice || 0), 0);
 
   return (
     <div className="space-y-6">
       <div className="glass-card p-4 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${state.status === 'live' ? 'bg-accent-emerald animate-pulse' : 'bg-muted-foreground'}`} />
-          <span className="font-rajdhani font-bold text-sm text-foreground tracking-wider">{state.status.toUpperCase()}</span>
+          <span className={`w-2.5 h-2.5 rounded-full ${auctionState?.status === 'live' ? 'bg-accent-emerald animate-pulse' : 'bg-muted-foreground'}`} />
+          <span className="font-rajdhani font-bold text-sm text-foreground tracking-wider">{(auctionState?.status || 'PRE').toUpperCase()}</span>
         </div>
-        <span className="font-mono text-sm text-muted-foreground">Sold: {state.soldCount}</span>
-        <span className="font-mono text-sm text-muted-foreground">Value: {formatPrice(state.totalValue)}</span>
-        <span className="font-mono text-sm text-muted-foreground">Phase: {state.currentPhase.toUpperCase()}</span>
-        <ConnectionStatus channel={channel} className="ml-2" />
+        <span className="font-mono text-sm text-muted-foreground">Sold: {soldCount}</span>
+        <span className="font-mono text-sm text-muted-foreground">Value: {formatPrice(totalValue)}</span>
+        <span className="font-mono text-sm text-muted-foreground">Phase: {(auctionState?.current_phase || 'marquee').toUpperCase()}</span>
+        <ConnectionStatus className="ml-1" />
+        <button onClick={() => { const m = toggleMute(); setMuted(m); }} className="ml-1 p-1.5 rounded hover:bg-muted/50 text-muted-foreground" title={muted ? 'Unmute' : 'Mute'}>
+          {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        </button>
         <div className="ml-auto flex gap-2">
           {(['pre', 'live', 'complete'] as const).map(s => (
-            <button
-              key={s}
-              onClick={async () => { dispatch({ type: 'SET_STATUS', status: s }); await syncAuctionState({ status: s }); }}
-              className={`px-3 py-1 rounded text-xs font-rajdhani font-semibold ${state.status === s ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
-            >
-              {s.toUpperCase()}
-            </button>
+            <button key={s} onClick={() => setStatus(s)}
+              className={`px-3 py-1 rounded text-xs font-rajdhani font-semibold ${auctionState?.status === s ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
+            >{s.toUpperCase()}</button>
           ))}
         </div>
       </div>
@@ -305,7 +374,7 @@ function AuctionControl() {
           {currentPlayer ? (
             <div className="glass-card p-6">
               <div className="flex items-start gap-4 mb-6">
-                <img src={currentPlayer.photo} alt={currentPlayer.name} className="w-20 h-20 rounded-xl border-2 border-accent-cyan/30" />
+                <img src={currentPlayer.photo} alt={currentPlayer.name} className="w-20 h-20 rounded-xl border-2 border-accent-cyan/30 object-cover" />
                 <div>
                   <h2 className="font-exo font-bold text-2xl text-foreground">{currentPlayer.name}</h2>
                   <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${currentPlayer.role}`}>
@@ -317,87 +386,42 @@ function AuctionControl() {
 
               <div className="text-center mb-6">
                 <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1">CURRENT BID</div>
-                <div className="font-mono text-5xl font-bold text-accent-cyan text-glow-cyan mb-2">{formatPrice(state.currentBid)}</div>
+                <div className="font-mono text-5xl font-bold text-accent-cyan text-glow-cyan mb-2">{formatPrice(auctionState?.current_bid_amount || currentPlayer.basePrice)}</div>
                 {leadingTeam && <div className="font-exo text-lg" style={{ color: leadingTeam.color }}>{leadingTeam.name}</div>}
               </div>
 
               <div className="text-center mb-6">
-                <AuctionTimer seconds={state.timerSeconds} />
-                <TimerBar seconds={state.timerSeconds} max={15} />
+                <AuctionTimer seconds={timerSeconds} />
+                <TimerBar seconds={timerSeconds} max={auctionState?.bid_reset_seconds || 15} />
               </div>
 
               <div className="flex justify-center gap-2 mb-6">
-                <button onClick={handleStartTimer} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-4">
-                  <Play size={14} /> Start
-                </button>
-                <button onClick={handlePauseTimer} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4">
-                  <Pause size={14} /> Pause
-                </button>
-                <button onClick={handleResetTimer} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4">
-                  <RotateCcw size={14} /> Reset
-                </button>
+                <button onClick={startTimer} className="btn-primary flex items-center gap-1.5 text-sm py-2 px-4"><Play size={14} /> Start</button>
+                <button onClick={pauseTimer} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4"><Pause size={14} /> Pause</button>
+                <button onClick={resetTimer} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4"><RotateCcw size={14} /> Reset</button>
               </div>
 
               <div className="mb-4">
                 <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-2">BID INCREMENT</div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   {increments.map(inc => (
-                    <button
-                      key={inc.value}
-                      onClick={async () => { dispatch({ type: 'SET_INCREMENT', increment: inc.value }); await syncAuctionState({ bid_increment: inc.value }); }}
-                      className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all ${state.bidIncrement === inc.value ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
-                    >
-                      {inc.label}
-                    </button>
+                    <button key={inc.value} onClick={() => setBidIncrement(inc.value)}
+                      className={`px-3 py-1.5 rounded text-xs font-mono font-semibold transition-all ${auctionState?.bid_increment === inc.value ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border hover:border-accent-cyan/40'}`}
+                    >{inc.label}</button>
                   ))}
                 </div>
               </div>
 
               <div className="mb-4">
                 <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-2">WHO RAISED THE PLACARD?</div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {state.teams.map(t => {
-                    const canAfford = t.purse >= (state.leadingTeamId ? state.currentBid + state.bidIncrement : state.currentBid);
-                    const freeze = state.freezes.find(f => f.teamId === t.id && f.playerId === state.currentPlayerId && f.freezeExpiresAt > Date.now());
-                    const isLeading = t.id === state.leadingTeamId;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => !isLeading && canAfford && !freeze && handleBid(t.id)}
-                        disabled={!canAfford || isLeading}
-                        className={`relative p-3 rounded-lg text-sm font-semibold transition-all border-2 overflow-hidden ${
-                          isLeading
-                            ? 'border-accent-emerald bg-accent-emerald/10 text-accent-emerald'
-                            : freeze
-                            ? 'border-accent-gold bg-accent-gold/10 cursor-not-allowed'
-                            : canAfford
-                            ? 'border-border bg-card text-foreground hover:border-accent-cyan/50 hover:-translate-y-0.5'
-                            : 'border-border bg-card/50 text-muted-foreground opacity-50 cursor-not-allowed'
-                        }`}
-                        style={canAfford && !isLeading && !freeze ? { borderColor: t.color + '40' } : {}}
-                      >
-                        {freeze && (
-                          <FreezeRing
-                            teamId={t.id}
-                            playerId={state.currentPlayerId!}
-                            freezeExpiresAt={freeze.freezeExpiresAt}
-                            freezeSeconds={freeze.freezeSeconds}
-                          />
-                        )}
-                        <div className="truncate">{t.name}</div>
-                        <div className="font-mono text-xs mt-1 text-muted-foreground">{formatPrice(t.purse)}</div>
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                  {teams.filter(t => t.is_active).map(t => <TeamBidButton key={t.id} team={t} />)}
                 </div>
               </div>
 
               <div className="flex gap-2">
-                <button
-                  onClick={handleSell}
-                  disabled={!state.leadingTeamId}
-                  className="btn-gold flex items-center gap-1.5 flex-1 justify-center disabled:opacity-50"
-                >
+                <button onClick={handleSell} disabled={!auctionState?.leading_team_id}
+                  className="btn-gold flex items-center gap-1.5 flex-1 justify-center disabled:opacity-50">
                   <Hammer size={16} /> SELL
                 </button>
                 <button onClick={handleUnsold} className="btn-crimson flex items-center gap-1.5 flex-1 justify-center">
@@ -416,22 +440,15 @@ function AuctionControl() {
             <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-2">SET CURRENT PLAYER</div>
             <div className="relative mb-3">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search available players..."
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search available players..."
                 className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent-cyan/40"
               />
             </div>
             <div className="space-y-1 max-h-60 overflow-auto">
               {availablePlayers.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => handleSetPlayer(p.id)}
-                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
-                >
-                  <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border" loading="lazy" />
+                <button key={p.id} onClick={() => setCurrentPlayer(p.id)}
+                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors text-left">
+                  <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy" />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-foreground truncate">{p.name}</div>
                     <span className={`text-[10px] font-rajdhani role-${p.role} px-1.5 py-0.5 rounded`}>
@@ -441,6 +458,7 @@ function AuctionControl() {
                   <span className="font-mono text-xs text-accent-cyan">{formatPrice(p.basePrice)}</span>
                 </button>
               ))}
+              {availablePlayers.length === 0 && <p className="text-muted-foreground text-xs text-center py-4">No available players match "{search}"</p>}
             </div>
           </div>
         </div>
@@ -448,19 +466,7 @@ function AuctionControl() {
         <div className="space-y-4">
           <div className="glass-card p-4">
             <h3 className="font-exo font-semibold text-foreground text-sm mb-3">Auction Log</h3>
-            <div className="space-y-2 max-h-[600px] overflow-auto">
-              {state.auctionLog.slice(0, 50).map((log, i) => (
-                <div key={i} className={`p-2 rounded-lg text-xs ${
-                  log.type === 'sold' ? 'bg-accent-gold/10 border border-accent-gold/20' :
-                  log.type === 'unsold' ? 'bg-accent-crimson/10 border border-accent-crimson/20' :
-                  'bg-card border border-border'
-                }`}>
-                  <div className="text-foreground">{log.message}</div>
-                  <div className="text-muted-foreground mt-0.5">{new Date(log.timestamp).toLocaleTimeString()}</div>
-                </div>
-              ))}
-              {state.auctionLog.length === 0 && <p className="text-muted-foreground text-xs text-center py-4">No activity yet</p>}
-            </div>
+            <AuctionLogPanel />
           </div>
         </div>
       </div>
@@ -469,7 +475,7 @@ function AuctionControl() {
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center">
           <div className="text-center animate-sold-stamp">
             <div className="font-orbitron text-6xl font-black text-accent-gold text-glow-gold border-4 border-accent-gold px-8 py-4 -rotate-12">SOLD!</div>
-            {soldTeamName && <div className="font-exo text-2xl text-foreground mt-4">{soldPlayerName} → {soldTeamName}</div>}
+            <div className="font-exo text-2xl text-foreground mt-4">{soldInfo.player} → {soldInfo.team}</div>
           </div>
         </div>
       )}
@@ -477,15 +483,49 @@ function AuctionControl() {
   );
 }
 
+function AuctionLogPanel() {
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data } = await supabase.from('auction_log').select('*').order('created_at', { ascending: false }).limit(50);
+      if (data) setLogs(data);
+    };
+    load();
+    const ch = supabase.channel('admin-log')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'auction_log' }, payload => {
+        setLogs(prev => [payload.new, ...prev].slice(0, 50));
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  return (
+    <div className="space-y-2 max-h-[600px] overflow-auto">
+      {logs.map((log, i) => (
+        <div key={i} className={`p-2 rounded-lg text-xs ${log.type === 'sold' ? 'bg-accent-gold/10 border border-accent-gold/20' : log.type === 'unsold' ? 'bg-accent-crimson/10 border border-accent-crimson/20' : 'bg-card border border-border'}`}>
+          <div className="text-foreground">{log.message}</div>
+          <div className="text-muted-foreground mt-0.5">{new Date(log.created_at).toLocaleTimeString()}</div>
+        </div>
+      ))}
+      {logs.length === 0 && <p className="text-muted-foreground text-xs text-center py-4">No activity yet</p>}
+    </div>
+  );
+}
+
 function PlayerManagement() {
-  const { state } = useAuction();
+  const { players, reIntroducePlayer } = useAuction();
   const [search, setSearch] = useState('');
-  const filtered = state.players.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-  const statusCounts = {
-    available: state.players.filter(p => p.status === 'available').length,
-    sold: state.players.filter(p => p.status === 'sold').length,
-    unsold: state.players.filter(p => p.status === 'unsold').length,
-    retained: state.players.filter(p => p.status === 'retained').length,
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const filtered = players.filter(p =>
+    (statusFilter === 'all' || p.status === statusFilter) &&
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+  const counts = {
+    available: players.filter(p => p.status === 'available').length,
+    sold: players.filter(p => p.status === 'sold').length,
+    unsold: players.filter(p => p.status === 'unsold').length,
+    live: players.filter(p => p.status === 'live').length,
   };
 
   return (
@@ -494,15 +534,22 @@ function PlayerManagement() {
         <div>
           <h2 className="font-exo font-bold text-xl text-foreground">Player Management</h2>
           <p className="text-xs text-muted-foreground">
-            {state.players.length} players · {statusCounts.sold} sold · {statusCounts.unsold} unsold · {statusCounts.available} available
+            {players.length} total · {counts.sold} sold · {counts.unsold} unsold · {counts.available} available
           </p>
         </div>
       </div>
-      <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search players..."
-          className="w-full bg-card border border-border rounded-lg pl-10 pr-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent-cyan/40"
-        />
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {(['all', 'available', 'live', 'sold', 'unsold'] as const).map(s => (
+          <button key={s} onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1 rounded text-xs font-rajdhani font-semibold ${statusFilter === s ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
+          >{s.toUpperCase()}{s !== 'all' ? ` (${counts[s as keyof typeof counts] ?? 0})` : ''}</button>
+        ))}
+        <div className="relative ml-auto">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+            className="bg-card border border-border rounded-lg pl-10 pr-4 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent-cyan/40 w-48"
+          />
+        </div>
       </div>
       <div className="glass-card overflow-hidden">
         <div className="overflow-x-auto">
@@ -512,40 +559,41 @@ function PlayerManagement() {
                 <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">#</th>
                 <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">PLAYER</th>
                 <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">ROLE</th>
-                <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">CATEGORY</th>
-                <th className="text-right p-3 text-xs font-rajdhani text-muted-foreground">BASE PRICE</th>
+                <th className="text-right p-3 text-xs font-rajdhani text-muted-foreground">BASE</th>
                 <th className="text-right p-3 text-xs font-rajdhani text-muted-foreground">RATING</th>
                 <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">STATUS</th>
+                <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">ACTIONS</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 50).map((p, i) => {
-                const team = p.soldToTeamId ? state.teams.find(t => t.id === p.soldToTeamId) : null;
-                return (
-                  <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="p-3 text-xs font-mono text-muted-foreground">{i + 1}</td>
-                    <td className="p-3">
-                      <div className="flex items-center gap-2">
-                        <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border" loading="lazy" />
-                        <span className="text-sm text-foreground font-medium">{p.name}</span>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <span className={`text-[10px] font-rajdhani font-bold px-2 py-0.5 rounded-full role-${p.role}`}>
-                        {roleEmojis[p.role]} {p.role.replace('-', ' ').toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="p-3 text-xs font-rajdhani text-muted-foreground">{p.category.toUpperCase()}</td>
-                    <td className="p-3 text-right font-mono text-xs text-accent-cyan">{formatPrice(p.basePrice)}</td>
-                    <td className="p-3 text-right font-mono text-xs text-accent-gold">{p.rating.toFixed(1)}</td>
-                    <td className="p-3 text-center">
-                      <span className={`text-[10px] font-rajdhani font-bold px-2 py-0.5 rounded-full border status-${p.status}`}>
-                        {p.status.toUpperCase()}{team && ` (${team.name})`}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.slice(0, 80).map((p, i) => (
+                <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                  <td className="p-3 text-xs font-mono text-muted-foreground">{i + 1}</td>
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy" />
+                      <span className="text-sm text-foreground font-medium">{p.name}</span>
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <span className={`text-[10px] font-rajdhani font-bold px-2 py-0.5 rounded-full role-${p.role}`}>
+                      {roleEmojis[p.role]} {p.role.replace('-', ' ').toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="p-3 text-right font-mono text-xs text-accent-cyan">{formatPrice(p.basePrice)}</td>
+                  <td className="p-3 text-right font-mono text-xs text-accent-gold">{p.rating.toFixed(1)}</td>
+                  <td className="p-3 text-center">
+                    <span className={`text-[10px] font-rajdhani font-bold px-2 py-0.5 rounded-full border status-${p.status}`}>
+                      {p.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td className="p-3 text-center">
+                    {p.status === 'unsold' && (
+                      <button onClick={() => reIntroducePlayer(p.id)} className="text-xs text-accent-cyan hover:underline">Re-introduce</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -555,27 +603,21 @@ function PlayerManagement() {
 }
 
 interface TeamForm {
-  name: string;
-  slug: string;
-  city: string;
-  color: string;
-  initialPurse: number;
-  rtmCards: number;
-  isActive: boolean;
-  password: string;
-  passwordHash: string;
+  name: string; slug: string; city: string; color: string;
+  initialPurse: number; rtmCards: number; isActive: boolean;
+  password: string; passwordHash: string;
 }
 
 const defaultForm: TeamForm = {
-  name: '', slug: '', city: '', color: '#00d4ff', initialPurse: 100,
-  rtmCards: 2, isActive: true, password: '', passwordHash: '',
+  name: '', slug: '', city: '', color: '#00d4ff',
+  initialPurse: 120, rtmCards: 2, isActive: true, password: '', passwordHash: '',
 };
 
 function TeamManagement() {
-  const { state } = useAuction();
+  const { teams } = useAuction();
   const { toast } = useToast();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editTeam, setEditTeam] = useState<any>(null);
+  const [editTeam, setEditTeam] = useState<TeamDB | null>(null);
   const [form, setForm] = useState<TeamForm>(defaultForm);
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof TeamForm, string>>>({});
   const [saving, setSaving] = useState(false);
@@ -590,30 +632,11 @@ function TeamManagement() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [credentialPasswords, setCredentialPasswords] = useState<Record<string, string>>({});
 
-  const openAdd = () => {
-    setEditTeam(null);
-    setForm(defaultForm);
-    setFormErrors({});
-    setShowPw(false);
-    setDrawerOpen(true);
-  };
-
-  const openEdit = (team: any) => {
+  const openAdd = () => { setEditTeam(null); setForm(defaultForm); setFormErrors({}); setShowPw(false); setDrawerOpen(true); };
+  const openEdit = (team: TeamDB) => {
     setEditTeam(team);
-    setForm({
-      name: team.name,
-      slug: team.slug,
-      city: team.city,
-      color: team.color,
-      initialPurse: team.initialPurse / 100,
-      rtmCards: team.rtmRemaining,
-      isActive: team.isActive,
-      password: '',
-      passwordHash: team.passwordHash,
-    });
-    setFormErrors({});
-    setShowPw(false);
-    setDrawerOpen(true);
+    setForm({ name: team.name, slug: team.slug, city: team.city, color: team.color, initialPurse: team.initial_purse / 100, rtmCards: team.rtm_remaining, isActive: team.is_active, password: '', passwordHash: team.password_hash });
+    setFormErrors({}); setShowPw(false); setDrawerOpen(true);
   };
 
   const genPassword = () => {
@@ -621,9 +644,7 @@ function TeamManagement() {
     const hash = hashTeamPassword(form.slug || editTeam?.slug || 'team', pw);
     setForm(f => ({ ...f, password: pw, passwordHash: hash }));
     setShowPw(true);
-    if (editTeam) {
-      setCredentialPasswords(p => ({ ...p, [editTeam.id]: pw }));
-    }
+    if (editTeam) setCredentialPasswords(p => ({ ...p, [editTeam.id]: pw }));
   };
 
   const handleNameChange = (name: string) => {
@@ -631,10 +652,9 @@ function TeamManagement() {
     setForm(f => ({ ...f, name, slug }));
   };
 
-  const validate = (): boolean => {
+  const validate = () => {
     const errors: Partial<Record<keyof TeamForm, string>> = {};
     if (!form.name.trim()) errors.name = 'Team name is required';
-    if (form.name.length > 40) errors.name = 'Max 40 characters';
     if (!form.slug.trim()) errors.slug = 'Slug is required';
     if (!/^[a-z0-9-]+$/.test(form.slug)) errors.slug = 'Only lowercase letters, numbers, hyphens';
     if (!form.city.trim()) errors.city = 'City is required';
@@ -648,31 +668,12 @@ function TeamManagement() {
     setSaving(true);
     try {
       if (editTeam) {
-        const updates: any = {
-          name: form.name,
-          slug: form.slug,
-          city: form.city,
-          color: form.color,
-          initial_purse: form.initialPurse * 100,
-          rtm_remaining: form.rtmCards,
-          is_active: form.isActive,
-          updated_at: new Date().toISOString(),
-        };
+        const updates: any = { name: form.name, slug: form.slug, city: form.city, color: form.color, initial_purse: form.initialPurse * 100, rtm_remaining: form.rtmCards, is_active: form.isActive, updated_at: new Date().toISOString() };
         if (form.password) updates.password_hash = form.passwordHash;
         await supabase.from('teams').update(updates).eq('id', editTeam.id);
         toast({ title: `Team ${form.name} updated` });
       } else {
-        const { data, error } = await supabase.from('teams').insert({
-          name: form.name,
-          slug: form.slug,
-          city: form.city,
-          color: form.color,
-          initial_purse: form.initialPurse * 100,
-          purse: form.initialPurse * 100,
-          rtm_remaining: form.rtmCards,
-          password_hash: form.passwordHash,
-          is_active: form.isActive,
-        }).select().single();
+        const { data, error } = await supabase.from('teams').insert({ name: form.name, slug: form.slug, city: form.city, color: form.color, initial_purse: form.initialPurse * 100, purse: form.initialPurse * 100, rtm_remaining: form.rtmCards, password_hash: form.passwordHash, is_active: form.isActive }).select().single();
         if (error) throw error;
         setNewTeamId(data.id);
         setCredentialPasswords(p => ({ ...p, [data.id]: form.password }));
@@ -688,60 +689,40 @@ function TeamManagement() {
   };
 
   const handleDeleteTeam = async (teamId: string) => {
-    const team = state.teams.find(t => t.id === teamId);
-    if (!team) return;
-    if (team.players.length > 0) {
-      toast({ title: 'Cannot delete team with players in squad', variant: 'destructive' });
-      return;
-    }
     await supabase.from('teams').delete().eq('id', teamId);
     setDeleteConfirm(null);
-    toast({ title: `Team ${team.name} deleted` });
+    toast({ title: 'Team deleted' });
   };
 
   const handleAdjustPurse = async (teamId: string) => {
-    const team = state.teams.find(t => t.id === teamId);
+    const team = teams.find(t => t.id === teamId);
     if (!team || !purseAdj || !purseReason) return;
     const adjLakhs = parseFloat(purseAdj) * 100;
     const newPurse = purseSign === '+' ? team.purse + adjLakhs : team.purse - adjLakhs;
     await supabase.from('teams').update({ purse: newPurse, updated_at: new Date().toISOString() }).eq('id', teamId);
     await supabase.from('auction_log').insert({ type: 'admin_purse_adjustment', team_id: teamId, amount: adjLakhs, message: `Admin adjusted purse: ${purseSign}${purseAdj} Cr — ${purseReason}` });
-    setExpandedRow(null);
-    setPurseAdj(''); setPurseReason('');
+    setExpandedRow(null); setPurseAdj(''); setPurseReason('');
     toast({ title: `Purse adjusted for ${team.name}` });
   };
 
-  const handleAnnounce = async (teamId: string) => {
+  const handleAnnounce = async () => {
     if (!announceMsg.trim()) return;
     await supabase.from('announcements').insert({ message: announceMsg });
-    setExpandedRow(null);
-    setAnnounceMsg('');
+    setExpandedRow(null); setAnnounceMsg('');
     toast({ title: 'Announcement sent to all dashboards' });
   };
 
   const downloadCSV = () => {
-    const domain = window.location.origin;
     const rows = [
       ['Team Name', 'Slug', 'Dashboard URL', 'Password', 'Initial Purse'],
-      ...state.teams.map(t => [
-        t.name, t.slug,
-        `${domain}/team/${t.slug}`,
-        credentialPasswords[t.id] || '(use Reset Password)',
-        `₹${(t.initialPurse / 100).toFixed(0)} Cr`,
-      ]),
+      ...teams.map(t => [t.name, t.slug, `${window.location.origin}/team/${t.slug}`, credentialPasswords[t.id] || '(see admin)', `₹${(t.initial_purse / 100).toFixed(0)} Cr`]),
     ];
     const csv = rows.map(r => r.map(v => `"${v}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    a.href = url; a.download = `bvrit_team_credentials_${date}.csv`;
-    a.click(); URL.revokeObjectURL(url);
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: `${label} copied!` });
+    a.href = URL.createObjectURL(blob);
+    a.download = `bvrit_credentials_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
   };
 
   return (
@@ -749,22 +730,16 @@ function TeamManagement() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="font-exo font-bold text-xl text-foreground">Team Management</h2>
-          <p className="text-xs text-muted-foreground">{state.teams.length} teams configured</p>
+          <p className="text-xs text-muted-foreground">{teams.length} teams</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={downloadCSV} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4">
-            <Download size={14} /> Download Credentials
-          </button>
-          <button onClick={openAdd} className="btn-secondary flex items-center gap-1.5 text-sm py-2 px-4">
-            <Plus size={14} /> Add New Team
-          </button>
+          <button onClick={downloadCSV} className="btn-ghost flex items-center gap-1.5 text-sm py-2 px-4"><Download size={14} /> Download Credentials</button>
+          <button onClick={openAdd} className="btn-secondary flex items-center gap-1.5 text-sm py-2 px-4"><Plus size={14} /> Add New Team</button>
         </div>
       </div>
 
-      {state.teams.length === 0 ? (
-        <div className="glass-card p-12 text-center">
-          <p className="text-muted-foreground">No teams yet. Click "Add New Team" to get started.</p>
-        </div>
+      {teams.length === 0 ? (
+        <div className="glass-card p-12 text-center"><p className="text-muted-foreground">No teams yet. Click "Add New Team" to get started.</p></div>
       ) : (
         <div className="glass-card overflow-hidden">
           <div className="overflow-x-auto">
@@ -774,21 +749,15 @@ function TeamManagement() {
                   <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">TEAM</th>
                   <th className="text-left p-3 text-xs font-rajdhani text-muted-foreground">CITY</th>
                   <th className="text-right p-3 text-xs font-rajdhani text-muted-foreground">PURSE</th>
-                  <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">SQUAD</th>
                   <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">RTM</th>
                   <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">STATUS</th>
                   <th className="text-center p-3 text-xs font-rajdhani text-muted-foreground">ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
-                {state.teams.map(team => (
+                {teams.map(team => (
                   <>
-                    <tr
-                      key={team.id}
-                      className={`border-b border-border/50 hover:bg-muted/30 transition-all ${
-                        newTeamId === team.id ? 'bg-accent-cyan/10' : ''
-                      }`}
-                    >
+                    <tr key={team.id} className={`border-b border-border/50 hover:bg-muted/30 transition-all ${newTeamId === team.id ? 'bg-accent-cyan/10' : ''}`}>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <div className="w-3 h-8 rounded-sm" style={{ background: team.color }} />
@@ -800,50 +769,33 @@ function TeamManagement() {
                       </td>
                       <td className="p-3 text-xs text-muted-foreground">{team.city}</td>
                       <td className="p-3 text-right font-mono text-sm text-accent-cyan">{formatPrice(team.purse)}</td>
-                      <td className="p-3 text-center font-mono text-sm text-foreground">{team.players.length}</td>
-                      <td className="p-3 text-center font-mono text-sm text-foreground">{team.rtmRemaining}</td>
+                      <td className="p-3 text-center font-mono text-sm">{team.rtm_remaining}</td>
                       <td className="p-3 text-center">
-                        <span className={`flex items-center gap-1 text-xs font-rajdhani font-semibold justify-center ${team.isActive ? 'text-accent-emerald' : 'text-muted-foreground'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${team.isActive ? 'bg-accent-emerald' : 'bg-muted-foreground'}`} />
-                          {team.isActive ? 'Active' : 'Inactive'}
+                        <span className={`text-xs font-rajdhani font-semibold ${team.is_active ? 'text-accent-emerald' : 'text-muted-foreground'}`}>
+                          {team.is_active ? '● Active' : '○ Inactive'}
                         </span>
                       </td>
                       <td className="p-3">
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => openEdit(team)} title="Edit" className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-cyan transition-colors"><Edit2 size={14} /></button>
-                          <button
-                            onClick={() => { setExpandedRow(expandedRow === team.id && expandMode === 'purse' ? null : team.id); setExpandMode('purse'); }}
-                            title="Adjust Purse"
-                            className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-gold transition-colors"
-                          ><DollarSign size={14} /></button>
-                          <button
-                            onClick={() => { setExpandedRow(expandedRow === team.id && expandMode === 'announce' ? null : team.id); setExpandMode('announce'); }}
-                            title="Announce"
-                            className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-orange transition-colors"
-                          ><Megaphone size={14} /></button>
-                          <button
-                            onClick={() => setDeleteConfirm(deleteConfirm === team.id ? null : team.id)}
-                            title={team.players.length > 0 ? 'Cannot delete — has players' : 'Delete'}
-                            disabled={team.players.length > 0}
-                            className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-crimson transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                          ><Trash2 size={14} /></button>
+                          <button onClick={() => openEdit(team)} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-cyan"><Edit2 size={14} /></button>
+                          <button onClick={() => { setExpandedRow(expandedRow === team.id && expandMode === 'purse' ? null : team.id); setExpandMode('purse'); }} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-gold"><DollarSign size={14} /></button>
+                          <button onClick={() => { setExpandedRow(expandedRow === team.id && expandMode === 'announce' ? null : team.id); setExpandMode('announce'); }} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-orange"><Megaphone size={14} /></button>
+                          <button onClick={() => setDeleteConfirm(deleteConfirm === team.id ? null : team.id)} className="p-1.5 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-crimson"><Trash2 size={14} /></button>
                         </div>
                       </td>
                     </tr>
                     {expandedRow === team.id && expandMode === 'purse' && (
                       <tr key={`${team.id}-purse`} className="border-b border-border/50 bg-accent-gold/5">
-                        <td colSpan={7} className="p-4">
-                          <div className="text-xs font-rajdhani text-accent-gold tracking-wider mb-3">ADJUST PURSE FOR {team.name.toUpperCase()}</div>
+                        <td colSpan={6} className="p-4">
+                          <div className="text-xs font-rajdhani text-accent-gold tracking-wider mb-3">ADJUST PURSE — {team.name.toUpperCase()}</div>
                           <div className="flex items-center gap-3 flex-wrap">
                             <span className="text-sm text-muted-foreground">Current: {formatPrice(team.purse)}</span>
-                            <div className="flex items-center gap-1">
-                              <button onClick={() => setPurseSign('+')} className={`px-2 py-1 rounded text-xs font-mono ${purseSign === '+' ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-card text-muted-foreground border border-border'}`}>+</button>
-                              <button onClick={() => setPurseSign('-')} className={`px-2 py-1 rounded text-xs font-mono ${purseSign === '-' ? 'bg-accent-crimson/20 text-accent-crimson' : 'bg-card text-muted-foreground border border-border'}`}>−</button>
+                            <div className="flex gap-1">
+                              <button onClick={() => setPurseSign('+')} className={`px-2 py-1 rounded text-xs ${purseSign === '+' ? 'bg-accent-emerald/20 text-accent-emerald' : 'bg-card text-muted-foreground border border-border'}`}>+</button>
+                              <button onClick={() => setPurseSign('-')} className={`px-2 py-1 rounded text-xs ${purseSign === '-' ? 'bg-accent-crimson/20 text-accent-crimson' : 'bg-card text-muted-foreground border border-border'}`}>−</button>
                             </div>
-                            <input type="number" min="0" value={purseAdj} onChange={e => setPurseAdj(e.target.value)} placeholder="Amount in Cr"
-                              className="bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent-gold/40 w-36" />
-                            <input type="text" value={purseReason} onChange={e => setPurseReason(e.target.value)} placeholder="Reason (required)"
-                              className="bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent-gold/40 flex-1 min-w-48" />
+                            <input type="number" min="0" value={purseAdj} onChange={e => setPurseAdj(e.target.value)} placeholder="Amount in Cr" className="bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none w-36" />
+                            <input type="text" value={purseReason} onChange={e => setPurseReason(e.target.value)} placeholder="Reason" className="bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none flex-1 min-w-48" />
                             <button onClick={() => handleAdjustPurse(team.id)} className="btn-primary text-sm py-1.5 px-4">Apply</button>
                             <button onClick={() => setExpandedRow(null)} className="btn-ghost text-sm py-1.5 px-4">Cancel</button>
                           </div>
@@ -852,17 +804,11 @@ function TeamManagement() {
                     )}
                     {expandedRow === team.id && expandMode === 'announce' && (
                       <tr key={`${team.id}-announce`} className="border-b border-border/50 bg-accent-orange/5">
-                        <td colSpan={7} className="p-4">
+                        <td colSpan={6} className="p-4">
                           <div className="text-xs font-rajdhani text-accent-orange tracking-wider mb-3">ANNOUNCEMENT TO ALL DASHBOARDS</div>
                           <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex-1 min-w-64 relative">
-                              <input type="text" value={announceMsg} onChange={e => setAnnounceMsg(e.target.value.slice(0, 120))} placeholder="Message..."
-                                className="w-full bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-accent-orange/40" />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{announceMsg.length}/120</span>
-                            </div>
-                            <button onClick={() => handleAnnounce(team.id)} className="btn-secondary text-sm py-1.5 px-4 flex items-center gap-1.5">
-                              <Megaphone size={14} /> Send
-                            </button>
+                            <input type="text" value={announceMsg} onChange={e => setAnnounceMsg(e.target.value.slice(0, 120))} placeholder="Message..." className="flex-1 min-w-64 bg-card border border-border rounded px-3 py-1.5 text-sm text-foreground focus:outline-none" />
+                            <button onClick={handleAnnounce} className="btn-secondary text-sm py-1.5 px-4"><Megaphone size={14} /> Send</button>
                             <button onClick={() => setExpandedRow(null)} className="btn-ghost text-sm py-1.5 px-4">Cancel</button>
                           </div>
                         </td>
@@ -870,7 +816,7 @@ function TeamManagement() {
                     )}
                     {deleteConfirm === team.id && (
                       <tr key={`${team.id}-delete`} className="border-b border-border/50 bg-accent-crimson/5">
-                        <td colSpan={7} className="p-4">
+                        <td colSpan={6} className="p-4">
                           <div className="flex items-center gap-3">
                             <span className="text-sm text-accent-crimson">Delete {team.name}? This cannot be undone.</span>
                             <button onClick={() => handleDeleteTeam(team.id)} className="btn-crimson text-sm py-1.5 px-4">Confirm Delete</button>
@@ -897,113 +843,87 @@ function TeamManagement() {
             </div>
 
             <div className="space-y-4">
-              <div>
-                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">TEAM NAME *</label>
-                <input value={form.name} onChange={e => handleNameChange(e.target.value)} maxLength={40}
-                  className={`w-full bg-background border rounded-lg px-4 py-2.5 text-foreground focus:outline-none ${formErrors.name ? 'border-accent-crimson' : 'border-border focus:border-accent-cyan/40'}`}
-                  placeholder="e.g. Mumbai Mavericks"
-                />
-                {formErrors.name && <p className="text-accent-crimson text-xs mt-1">{formErrors.name}</p>}
-              </div>
+              {[{ label: 'TEAM NAME *', key: 'name', ph: 'Mumbai Mavericks', onChange: (v: string) => handleNameChange(v) },
+                { label: 'CITY *', key: 'city', ph: 'Mumbai' }].map(({ label, key, ph, onChange }) => (
+                <div key={key}>
+                  <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">{label}</label>
+                  <input value={(form as any)[key]} onChange={e => onChange ? onChange(e.target.value) : setForm(f => ({ ...f, [key]: e.target.value }))} placeholder={ph}
+                    className={`w-full bg-background border rounded-lg px-4 py-2.5 text-foreground focus:outline-none ${(formErrors as any)[key] ? 'border-accent-crimson' : 'border-border focus:border-accent-cyan/40'}`}
+                  />
+                  {(formErrors as any)[key] && <p className="text-accent-crimson text-xs mt-1">{(formErrors as any)[key]}</p>}
+                </div>
+              ))}
 
               <div>
                 <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">SLUG *</label>
-                <input value={form.slug} onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))}
+                <input value={form.slug} onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))} placeholder="mumbai-mavericks"
                   className={`w-full bg-background border rounded-lg px-4 py-2.5 text-foreground font-mono text-sm focus:outline-none ${formErrors.slug ? 'border-accent-crimson' : 'border-border focus:border-accent-cyan/40'}`}
-                  placeholder="mumbai-mavericks"
                 />
                 {formErrors.slug && <p className="text-accent-crimson text-xs mt-1">{formErrors.slug}</p>}
               </div>
 
-              <div>
-                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">CITY *</label>
-                <input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))}
-                  className={`w-full bg-background border rounded-lg px-4 py-2.5 text-foreground focus:outline-none ${formErrors.city ? 'border-accent-crimson' : 'border-border focus:border-accent-cyan/40'}`}
-                  placeholder="e.g. Mumbai"
-                />
-                {formErrors.city && <p className="text-accent-crimson text-xs mt-1">{formErrors.city}</p>}
-              </div>
-
-              <div>
-                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">TEAM COLOR</label>
-                <div className="flex items-center gap-3">
-                  <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
-                    className="w-12 h-10 rounded cursor-pointer border border-border bg-transparent"
-                  />
-                  <span className="font-mono text-sm text-muted-foreground">{form.color.toUpperCase()}</span>
-                  <div className="w-8 h-8 rounded-full" style={{ background: form.color }} />
-                </div>
-              </div>
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">INITIAL PURSE (Cr)</label>
-                  <input type="number" min="1" value={form.initialPurse} onChange={e => setForm(f => ({ ...f, initialPurse: +e.target.value }))}
-                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:border-accent-cyan/40"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">= {formatPrice(form.initialPurse * 100)}</p>
+                  <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">TEAM COLOR</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} className="w-10 h-10 rounded cursor-pointer border-0 bg-transparent" />
+                    <span className="font-mono text-xs text-muted-foreground">{form.color}</span>
+                  </div>
                 </div>
                 <div>
-                  <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">RTM CARDS</label>
-                  <input type="number" min="0" max="5" value={form.rtmCards} onChange={e => setForm(f => ({ ...f, rtmCards: +e.target.value }))}
-                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:border-accent-cyan/40"
-                  />
+                  <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">INITIAL PURSE (Cr)</label>
+                  <input type="number" min="1" value={form.initialPurse} onChange={e => setForm(f => ({ ...f, initialPurse: parseFloat(e.target.value) || 0 }))}
+                    className="w-full bg-background border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:border-accent-cyan/40" />
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3 bg-background rounded-lg border border-border">
-                <span className="text-sm text-foreground">Active</span>
-                <button
-                  onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${form.isActive ? 'bg-accent-emerald' : 'bg-muted'}`}
-                >
-                  <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${form.isActive ? 'translate-x-6' : 'translate-x-0.5'}`} />
-                </button>
               </div>
 
               <div>
-                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">
-                  PASSWORD {editTeam ? '(leave blank to keep current)' : '*'}
-                </label>
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="relative flex-1">
-                    <input
-                      type={showPw ? 'text' : 'password'}
-                      value={form.password}
-                      readOnly
-                      placeholder={editTeam ? '••••••••' : 'Click generate →'}
-                      className={`w-full bg-background border rounded-lg px-4 py-2.5 text-foreground font-mono focus:outline-none ${formErrors.password ? 'border-accent-crimson' : 'border-border'}`}
-                    />
-                    <button onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                      {showPw ? <EyeOff size={14} /> : <EyeIcon size={14} />}
-                    </button>
-                  </div>
-                  {form.password && (
-                    <button onClick={() => copyToClipboard(form.password, 'Password')} className="p-2 rounded hover:bg-muted/50 text-muted-foreground hover:text-accent-cyan">
-                      <Copy size={16} />
-                    </button>
-                  )}
+                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">RTM CARDS</label>
+                <div className="flex gap-2">
+                  {[0, 1, 2, 3].map(n => (
+                    <button key={n} onClick={() => setForm(f => ({ ...f, rtmCards: n }))}
+                      className={`flex-1 py-2 rounded text-sm font-bold ${form.rtmCards === n ? 'bg-accent-purple/20 text-accent-purple border border-accent-purple/40' : 'bg-card text-muted-foreground border border-border'}`}
+                    >{n}</button>
+                  ))}
                 </div>
-                <button onClick={genPassword} className="w-full py-2 rounded-lg border border-accent-orange/40 bg-accent-orange/10 text-accent-orange text-sm font-semibold hover:bg-accent-orange/20 transition-colors flex items-center gap-2 justify-center">
-                  <Key size={14} /> Generate Password
-                </button>
-                {formErrors.password && <p className="text-accent-crimson text-xs mt-1">{formErrors.password}</p>}
+              </div>
+
+              <div>
+                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1.5 block">PASSWORD {editTeam ? '(leave blank to keep current)' : '*'}</label>
+                <div className="flex gap-2 mb-2">
+                  <button onClick={genPassword} className="btn-secondary text-sm py-2 flex-1">⚡ Generate Password</button>
+                </div>
                 {form.password && (
-                  <div className="mt-2 p-2 bg-accent-gold/10 border border-accent-gold/30 rounded-lg text-xs text-accent-gold">
-                    ⚠️ Save this password now — it cannot be retrieved after closing this drawer.
-                  </div>
+                  <>
+                    <div className="p-3 bg-accent-gold/10 border border-accent-gold/30 rounded-lg mb-2">
+                      <p className="text-xs text-accent-gold font-semibold mb-1">⚠️ Save this password now — it cannot be retrieved after closing</p>
+                      <div className="flex items-center gap-2">
+                        <input type={showPw ? 'text' : 'password'} value={form.password} readOnly
+                          className="flex-1 bg-background border border-border rounded px-3 py-1.5 text-sm font-mono text-foreground" />
+                        <button onClick={() => setShowPw(v => !v)} className="p-2 text-muted-foreground hover:text-foreground">
+                          {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        <button onClick={() => navigator.clipboard.writeText(form.password)} className="p-2 text-muted-foreground hover:text-accent-cyan" title="Copy">📋</button>
+                      </div>
+                    </div>
+                  </>
                 )}
+                {formErrors.password && <p className="text-accent-crimson text-xs mt-1">{formErrors.password}</p>}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <label className="text-xs font-rajdhani text-muted-foreground tracking-wider">ACTIVE</label>
+                <button onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
+                  className={`w-12 h-6 rounded-full transition-colors ${form.isActive ? 'bg-accent-emerald' : 'bg-muted'}`}>
+                  <span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform mx-0.5 ${form.isActive ? 'translate-x-6' : 'translate-x-0'}`} />
+                </button>
               </div>
             </div>
 
-            <button onClick={handleSave} disabled={saving}
-              className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60"
-            >
-              {saving ? (
-                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : null}
-              {saving ? 'Saving…' : editTeam ? 'Save Changes' : 'Create Team'}
-            </button>
+            <div className="flex gap-3 pt-4 border-t border-border">
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 py-3">{saving ? 'Saving…' : editTeam ? 'Save Changes' : 'Create Team'}</button>
+              <button onClick={() => setDrawerOpen(false)} className="btn-ghost px-6">Cancel</button>
+            </div>
           </div>
         </div>
       )}
@@ -1012,59 +932,73 @@ function TeamManagement() {
 }
 
 function LiveMonitor() {
-  const { state } = useAuction();
+  const { teams, players, auctionState, freezes, connected } = useAuction();
+  const currentPlayer = auctionState?.current_player_id ? players.find(p => p.id === auctionState.current_player_id) : null;
+  const soldCount = players.filter(p => p.status === 'sold').length;
+  const unsoldCount = players.filter(p => p.status === 'unsold').length;
+  const now = Date.now();
 
   return (
-    <div>
-      <h2 className="font-exo font-bold text-xl text-foreground mb-6">Live Monitor</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        {state.teams.map(t => {
-          const pct = (t.purse / (t.initialPurse || 12000)) * 100;
+    <div className="space-y-6">
+      <div className="glass-card p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-exo font-bold text-xl text-foreground">Live Monitor</h2>
+          <ConnectionStatus />
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Status', value: (auctionState?.status || 'pre').toUpperCase() },
+            { label: 'Sold', value: soldCount },
+            { label: 'Unsold', value: unsoldCount },
+            { label: 'Available', value: players.filter(p => p.status === 'available').length },
+          ].map(stat => (
+            <div key={stat.label} className="bg-muted/30 rounded-lg p-3 text-center">
+              <div className="text-xs font-rajdhani text-muted-foreground tracking-wider">{stat.label}</div>
+              <div className="font-mono text-xl font-bold text-foreground mt-1">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {currentPlayer && (
+        <div className="glass-card p-4">
+          <div className="text-xs font-rajdhani text-accent-emerald tracking-wider mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" /> ON THE BLOCK
+          </div>
+          <div className="flex items-center gap-4">
+            <img src={currentPlayer.photo} alt={currentPlayer.name} className="w-16 h-16 rounded-xl border border-border object-cover" />
+            <div>
+              <div className="font-exo font-bold text-xl text-foreground">{currentPlayer.name}</div>
+              <div className="font-mono text-2xl text-accent-cyan">{formatPrice(auctionState!.current_bid_amount)}</div>
+              {auctionState?.leading_team_id && (
+                <div className="text-sm text-muted-foreground">Leading: {teams.find(t => t.id === auctionState.leading_team_id)?.name}</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {teams.map(team => {
+          const squad = players.filter(p => p.soldToTeamId === team.id);
+          const freeze = freezes.find(f => f.team_id === team.id && f.player_id === auctionState?.current_player_id && f.freeze_expires_at > now);
+          const pursePct = team.initial_purse > 0 ? (team.purse / team.initial_purse) * 100 : 0;
           return (
-            <div key={t.id} className="glass-card p-4" style={{ borderTopColor: t.color, borderTopWidth: 2 }}>
-              <div className="font-exo font-semibold text-sm text-foreground truncate mb-2">{t.name}</div>
-              <div className={`font-mono text-lg font-bold ${pct > 60 ? 'text-accent-emerald' : pct > 20 ? 'text-accent-gold' : 'text-accent-crimson'}`}>
-                {formatPrice(t.purse)}
+            <div key={team.id} className="glass-card p-4" style={{ borderTopColor: team.color, borderTopWidth: 2 }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-exo font-semibold text-foreground">{team.name}</span>
+                {freeze && <span className="text-xs text-accent-gold">🔒 {Math.ceil((freeze.freeze_expires_at - now) / 1000)}s</span>}
               </div>
-              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mt-2 mb-1">
-                <div className={`h-full rounded-full ${pct > 60 ? 'bg-accent-emerald' : pct > 20 ? 'bg-accent-gold' : 'bg-accent-crimson'}`} style={{ width: `${pct}%` }} />
+              <div className="font-mono text-lg text-accent-cyan mb-2">{formatPrice(team.purse)}</div>
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-2">
+                <div className="h-full rounded-full bg-accent-cyan transition-all" style={{ width: `${pursePct}%` }} />
               </div>
-              <div className="text-xs text-muted-foreground">{t.players.length} players • {t.rtmRemaining} RTM</div>
+              <div className="text-xs text-muted-foreground">{squad.length} players · {team.rtm_remaining} RTM</div>
             </div>
           );
         })}
-      </div>
-
-      <div className="glass-card p-6">
-        <h3 className="font-exo font-semibold text-foreground mb-4">Sold Players</h3>
-        <div className="space-y-2">
-          {state.players.filter(p => p.status === 'sold').map(p => {
-            const team = state.teams.find(t => t.id === p.soldToTeamId);
-            return (
-              <div key={p.id} className="flex items-center justify-between py-2 border-b border-border/50">
-                <div className="flex items-center gap-2">
-                  <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border" loading="lazy" />
-                  <span className="text-sm text-foreground">{p.name}</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  {team && <span className="text-xs" style={{ color: team.color }}>{team.name}</span>}
-                  <span className="font-mono text-xs text-accent-gold">{formatPrice(p.soldPrice || 0)}</span>
-                </div>
-              </div>
-            );
-          })}
-          {state.players.filter(p => p.status === 'sold').length === 0 && (
-            <p className="text-muted-foreground text-sm text-center py-4">No players sold yet</p>
-          )}
-        </div>
       </div>
     </div>
   );
 }
 
-function generateTeamPassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let pw = '';
-  for (let i = 0; i < 8; i++) pw += chars[Math.floor(Math.random() * chars.length)];
-  return pw;
-}

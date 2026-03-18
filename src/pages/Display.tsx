@@ -1,355 +1,293 @@
-import { useState, useEffect, useRef } from 'react';
-import { formatPrice } from '@/context/AuctionContext';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useAuction, formatPrice } from '@/context/AuctionContext';
+import { roleEmojis, Player } from '@/data/players';
 import AuctionTimer from '@/components/AuctionTimer';
-import { roleEmojis } from '@/data/players';
-import { supabase } from '@/lib/supabase';
 import ConnectionStatus from '@/components/ConnectionStatus';
-import { RealtimeChannel } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 
-interface AuctionStateDB {
-  id: number;
-  status: string;
-  current_player_id: string | null;
-  current_bid_amount: number;
-  leading_team_id: string | null;
-  timer_expires_at: number | null;
-  timer_running: boolean;
-  current_phase: string;
-  bid_increment: number;
+function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): number {
+  const [seconds, setSeconds] = useState(15);
+  useEffect(() => {
+    const tick = () => {
+      if (timerExpiresAt) setSeconds(Math.max(0, Math.floor((timerExpiresAt - Date.now()) / 1000)));
+      else setSeconds(15);
+    };
+    tick();
+    const iv = setInterval(tick, 500);
+    return () => clearInterval(iv);
+  }, [timerExpiresAt, timerRunning]);
+  return seconds;
 }
 
-interface TeamDB {
-  id: string;
-  name: string;
-  slug: string;
-  color: string;
-  purse: number;
-  initial_purse: number;
-  rtm_remaining: number;
-  is_active: boolean;
+function SoldTicker({ soldPlayers, teams }: { soldPlayers: Player[]; teams: { id: string; name: string; color: string }[] }) {
+  const entries = soldPlayers.filter(p => p.soldToTeamId).map(p => {
+    const t = teams.find(tm => tm.id === p.soldToTeamId);
+    return { name: p.name, teamName: t?.name || '', teamColor: t?.color || '#fff', price: p.soldPrice || 0 };
+  });
+
+  if (entries.length === 0) return null;
+
+  const doubled = [...entries, ...entries];
+
+  return (
+    <div className="bg-background/80 border-t border-border h-10 flex items-center overflow-hidden relative">
+      <div className="flex-shrink-0 px-3 text-xs font-rajdhani font-bold text-accent-gold tracking-widest border-r border-border h-full flex items-center">SOLD ▸</div>
+      <div className="flex-1 overflow-hidden">
+        <div className="flex whitespace-nowrap animate-marquee">
+          {doubled.map((e, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 px-4 text-xs font-rajdhani">
+              <span className="inline-block w-2 h-2 rounded-full flex-shrink-0" style={{ background: e.teamColor }} />
+              <span className="text-foreground">{e.name}</span>
+              <span className="text-muted-foreground">→</span>
+              <span style={{ color: e.teamColor }}>{e.teamName}</span>
+              <span className="text-accent-gold font-mono">₹{(e.price / 100).toFixed(1)} Cr</span>
+              <span className="text-border mx-2">·</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
-interface PlayerDB {
-  id: string;
-  name: string;
-  role: string;
-  category: string;
-  base_price: number;
-  image_url: string;
-  status: string;
-  sold_to_team_id: string | null;
-  sold_price: number | null;
-  sort_order: number;
+function TeamBudgetsPanel() {
+  const { teams, auctionState, freezes, players } = useAuction();
+  const [teamFreezeRemaining, setTeamFreezeRemaining] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const updated: Record<string, number> = {};
+      const currentPlayerId = auctionState?.current_player_id;
+      if (!currentPlayerId) return;
+      freezes.forEach(f => {
+        if (f.player_id !== currentPlayerId) return;
+        const rem = Math.max(0, f.freeze_expires_at - Date.now());
+        if (rem > 0) updated[f.team_id] = rem;
+      });
+      setTeamFreezeRemaining(updated);
+    }, 500);
+    return () => clearInterval(iv);
+  }, [freezes, auctionState?.current_player_id]);
+
+  const sortedTeams = [...teams]
+    .filter(t => t.is_active)
+    .sort((a, b) => b.purse - a.purse);
+
+  return (
+    <div className="flex-1 overflow-auto p-3 space-y-2">
+      <div className="text-[10px] font-rajdhani text-muted-foreground tracking-widest mb-2">TEAM BUDGETS</div>
+      {sortedTeams.map(team => {
+        const isLeading = team.id === auctionState?.leading_team_id;
+        const freezeMs = teamFreezeRemaining[team.id];
+        const pct = team.initial_purse > 0 ? (team.purse / team.initial_purse) * 100 : 0;
+        const barColor = pct > 60 ? '#00ff88' : pct > 20 ? '#ffd700' : '#ff3b3b';
+        const squadSize = players.filter(p => p.soldToTeamId === team.id).length;
+
+        return (
+          <div key={team.id} className={`rounded-lg p-2 border transition-all ${isLeading ? 'border-accent-emerald bg-accent-emerald/5' : 'border-border bg-card/50'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-4 rounded-sm flex-shrink-0" style={{ background: team.color }} />
+                <span className={`text-xs font-exo font-semibold truncate ${isLeading ? 'text-accent-emerald' : 'text-foreground'}`}>
+                  {team.name}
+                </span>
+                {isLeading && <span className="text-[9px] bg-accent-emerald/20 text-accent-emerald px-1.5 py-0.5 rounded font-rajdhani font-bold">LEADING</span>}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {freezeMs && freezeMs > 0 && (
+                  <span className="text-[10px] text-accent-gold font-mono">🔒{Math.ceil(freezeMs / 1000)}s</span>
+                )}
+                <span className="font-mono text-xs text-accent-cyan">{formatPrice(team.purse)}</span>
+              </div>
+            </div>
+            <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: barColor }} />
+            </div>
+            <div className="text-[9px] text-muted-foreground mt-0.5">{squadSize} players · {team.rtm_remaining} RTM</div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-interface FreezeDB {
-  team_id: string;
-  player_id: string;
-  freeze_expires_at: number;
-  freeze_seconds: number;
+function SoldOverlay({ player, team }: { player: Player; team: { name: string; color: string } | undefined }) {
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md">
+      <div className="text-center">
+        <div className="font-orbitron text-7xl font-black text-accent-gold text-glow-gold border-4 border-accent-gold px-10 py-5 -rotate-6 mb-6 inline-block">
+          SOLD!
+        </div>
+        <div className="font-exo font-bold text-3xl text-foreground mb-2">{player.name}</div>
+        {team && <div className="font-exo text-xl" style={{ color: team.color }}>{team.name}</div>}
+      </div>
+    </div>
+  );
 }
 
 export default function Display() {
-  const [auctionState, setAuctionState] = useState<AuctionStateDB | null>(null);
-  const [teams, setTeams] = useState<TeamDB[]>([]);
-  const [currentPlayer, setCurrentPlayer] = useState<PlayerDB | null>(null);
-  const [upcomingPlayers, setUpcomingPlayers] = useState<PlayerDB[]>([]);
-  const [soldPlayers, setSoldPlayers] = useState<(PlayerDB & { teamName: string; teamColor: string })[]>([]);
-  const [timerSeconds, setTimerSeconds] = useState(15);
-  const [teamFreezes, setTeamFreezes] = useState<Record<string, FreezeDB>>({});
-  const [teamFreezeRemaining, setTeamFreezeRemaining] = useState<Record<string, number>>({});
-  const [showSold, setShowSold] = useState(false);
-  const [soldInfo, setSoldInfo] = useState({ player: '', team: '', price: 0, color: '' });
-  const [channel, setChannel] = useState<RealtimeChannel | null>(null);
+  const { auctionState, players, teams, freezes, getPlayer, connected } = useAuction();
+  const timerSeconds = useLocalTimer(auctionState?.timer_expires_at ?? null, auctionState?.timer_running ?? false);
 
-  const timerRef = useRef<any>(null);
-  const freezeTimersRef = useRef<Record<string, any>>({});
-
-  const syncTimer = (aState: AuctionStateDB) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    if (aState.timer_running && aState.timer_expires_at) {
-      const tick = () => {
-        const rem = Math.max(0, Math.floor((aState.timer_expires_at! - Date.now()) / 1000));
-        setTimerSeconds(rem);
-      };
-      tick();
-      timerRef.current = setInterval(tick, 1000);
-    } else {
-      setTimerSeconds(aState.timer_expires_at ? Math.max(0, Math.floor((aState.timer_expires_at - Date.now()) / 1000)) : 15);
-    }
-  };
-
-  const startFreezeTimer = (freeze: FreezeDB) => {
-    const teamId = freeze.team_id;
-    if (freezeTimersRef.current[teamId]) clearInterval(freezeTimersRef.current[teamId]);
-    const tick = () => {
-      const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
-      setTeamFreezeRemaining(prev => ({ ...prev, [teamId]: rem }));
-      if (rem <= 0) {
-        setTeamFreezes(prev => { const n = { ...prev }; delete n[teamId]; return n; });
-        clearInterval(freezeTimersRef.current[teamId]);
-      }
-    };
-    tick();
-    freezeTimersRef.current[teamId] = setInterval(tick, 1000);
-  };
-
-  const loadCurrentPlayer = async (playerId: string | null) => {
-    if (!playerId) { setCurrentPlayer(null); return; }
-    const { data } = await supabase.from('players').select('*').eq('id', playerId).single();
-    setCurrentPlayer(data || null);
-  };
-
-  const loadUpcoming = async () => {
-    const { data } = await supabase.from('players').select('*').eq('status', 'available').order('sort_order').limit(5);
-    setUpcomingPlayers(data || []);
-  };
-
-  const loadSoldTicker = async (allTeams: TeamDB[]) => {
-    const { data } = await supabase.from('players').select('*').eq('status', 'sold').order('updated_at', { ascending: false }).limit(30);
-    if (data) {
-      setSoldPlayers(data.map(p => {
-        const t = allTeams.find(tm => tm.id === p.sold_to_team_id);
-        return { ...p, teamName: t?.name || '', teamColor: t?.color || '#fff' };
-      }));
-    }
-  };
-
-  useEffect(() => {
-    const init = async () => {
-      const [{ data: aState }, { data: teamsData }] = await Promise.all([
-        supabase.from('auction_state').select('*').single(),
-        supabase.from('teams').select('*').order('name'),
-      ]);
-      const loadedTeams = teamsData || [];
-      setTeams(loadedTeams);
-      if (aState) { setAuctionState(aState); syncTimer(aState); loadCurrentPlayer(aState.current_player_id); }
-      loadUpcoming();
-      loadSoldTicker(loadedTeams);
-
-      const { data: freezes } = await supabase.from('team_player_freezes').select('*');
-      if (freezes) {
-        const now = Date.now();
-        const active = freezes.filter(f => f.freeze_expires_at > now);
-        const map: Record<string, FreezeDB> = {};
-        active.forEach(f => { map[f.team_id] = f; startFreezeTimer(f); });
-        setTeamFreezes(map);
-      }
-
-      const ch = supabase.channel('display-main')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'auction_state' }, async (payload) => {
-          const newState = payload.new as AuctionStateDB;
-          const prev = aState;
-          setAuctionState(newState);
-          syncTimer(newState);
-          if (newState.current_player_id !== prev?.current_player_id) {
-            loadCurrentPlayer(newState.current_player_id);
-            loadUpcoming();
-          }
-          if (!newState.current_player_id && prev?.current_player_id && prev.leading_team_id) {
-            const soldTeam = loadedTeams.find(t => t.id === prev.leading_team_id);
-            setSoldInfo({ player: '', team: soldTeam?.name || '', price: prev.current_bid_amount, color: soldTeam?.color || '' });
-            setShowSold(true);
-            loadSoldTicker(loadedTeams);
-            setTimeout(() => setShowSold(false), 3000);
-          }
-        })
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'teams' }, (payload) => {
-          setTeams(prev => {
-            const updated = prev.map(t => t.id === (payload.new as TeamDB).id ? (payload.new as TeamDB) : t);
-            loadSoldTicker(updated);
-            return updated;
-          });
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'team_player_freezes' }, (payload) => {
-          if (payload.eventType === 'DELETE') {
-            const teamId = (payload.old as any).team_id;
-            setTeamFreezes(prev => { const n = { ...prev }; delete n[teamId]; return n; });
-            if (freezeTimersRef.current[teamId]) clearInterval(freezeTimersRef.current[teamId]);
-          } else {
-            const freeze = payload.new as FreezeDB;
-            setTeamFreezes(prev => ({ ...prev, [freeze.team_id]: freeze }));
-            startFreezeTimer(freeze);
-          }
-        })
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'players' }, (payload) => {
-          const p = payload.new as PlayerDB;
-          if (p.status === 'sold') {
-            loadSoldTicker(loadedTeams);
-          }
-          if (p.status === 'available') {
-            loadUpcoming();
-          }
-        })
-        .subscribe();
-      setChannel(ch);
-    };
-    init();
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      Object.values(freezeTimersRef.current).forEach(clearInterval);
-      if (channel) supabase.removeChannel(channel);
-    };
-  }, []);
-
+  const currentPlayer = auctionState?.current_player_id ? getPlayer(auctionState.current_player_id) : null;
   const leadingTeam = auctionState?.leading_team_id ? teams.find(t => t.id === auctionState.leading_team_id) : null;
 
+  const [showSoldOverlay, setShowSoldOverlay] = useState(false);
+  const [soldPlayer, setSoldPlayer] = useState<Player | null>(null);
+  const [soldTeam, setSoldTeam] = useState<{ name: string; color: string } | undefined>();
+
+  const prevCurrentPlayerId = useRef<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    const prev = prevCurrentPlayerId.current;
+    const curr = auctionState?.current_player_id;
+    if (prev !== undefined && prev !== null && curr === null && auctionState?.leading_team_id === null) {
+      // Player was cleared — may have been sold
+    }
+    prevCurrentPlayerId.current = curr;
+  }, [auctionState?.current_player_id]);
+
+  // Listen for sold events via auction_log
+  useEffect(() => {
+    const ch = supabase.channel('display-log')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'auction_log' }, payload => {
+        const log = payload.new as any;
+        if (log.type === 'sold') {
+          const p = players.find(pl => pl.id === log.player_id);
+          const t = teams.find(tm => tm.id === log.team_id);
+          if (p) {
+            setSoldPlayer(p);
+            setSoldTeam(t ? { name: t.name, color: t.color } : undefined);
+            setShowSoldOverlay(true);
+            setTimeout(() => setShowSoldOverlay(false), 4000);
+          }
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [players, teams]);
+
+  const soldPlayers = useMemo(() => players.filter(p => p.status === 'sold'), [players]);
+  const upcomingPlayers = useMemo(() => players.filter(p => p.status === 'available').slice(0, 5), [players]);
+  const stats = useMemo(() => ({
+    sold: soldPlayers.length,
+    unsold: players.filter(p => p.status === 'unsold').length,
+    available: players.filter(p => p.status === 'available').length,
+    totalSpent: soldPlayers.reduce((s, p) => s + (p.soldPrice || 0), 0),
+  }), [players, soldPlayers]);
+
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background relative flex flex-col">
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute w-[600px] h-[600px] -top-40 -left-40 rounded-full bg-accent-cyan/5 blur-3xl animate-float" />
-        <div className="absolute w-[500px] h-[500px] -bottom-40 -right-40 rounded-full bg-accent-orange/5 blur-3xl animate-float" style={{ animationDelay: '4s' }} />
+    <div className="h-screen w-full bg-background flex flex-col overflow-hidden relative">
+      {showSoldOverlay && soldPlayer && (
+        <SoldOverlay player={soldPlayer} team={soldTeam} />
+      )}
+
+      {/* Zone 1: Top Status Bar */}
+      <div className="flex-shrink-0 bg-card/80 border-b border-border px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="font-orbitron font-black text-accent-cyan text-lg tracking-wider">BVRIT E-CELL</div>
+          <div className="text-muted-foreground text-xs font-rajdhani">IPL AUCTION 2026</div>
+        </div>
+        <div className="flex items-center gap-6">
+          <span className="font-rajdhani text-xs text-muted-foreground">SOLD: <span className="text-accent-gold font-bold">{stats.sold}</span></span>
+          <span className="font-rajdhani text-xs text-muted-foreground">UNSOLD: <span className="text-accent-crimson font-bold">{stats.unsold}</span></span>
+          <span className="font-rajdhani text-xs text-muted-foreground">AVAILABLE: <span className="font-bold text-foreground">{stats.available}</span></span>
+          <span className="font-rajdhani text-xs text-muted-foreground">TOTAL SPENT: <span className="text-accent-emerald font-bold">{formatPrice(stats.totalSpent)}</span></span>
+          <span className="font-rajdhani text-xs text-muted-foreground">PHASE: <span className="font-bold text-foreground">{(auctionState?.current_phase || '—').toUpperCase()}</span></span>
+        </div>
+        <ConnectionStatus />
       </div>
 
-      <div className="absolute top-3 right-4 z-20">
-        <ConnectionStatus channel={channel} />
-      </div>
-
-      <div className="flex-1 grid grid-cols-[1fr_300px] grid-rows-[1fr_auto] gap-0 relative z-10 p-4">
-        <div className="flex flex-col items-center justify-center p-8">
+      {/* Main content: Zone 2 (player) + Zone 4 (budgets) */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Zone 2: Current Player (center) */}
+        <div className="flex-1 flex flex-col items-center justify-center p-6 relative">
           {currentPlayer ? (
-            <div className="text-center">
-              <div className="flex items-center gap-2 justify-center mb-6">
-                <span className="w-3 h-3 rounded-full bg-accent-emerald animate-pulse" />
-                <span className="font-rajdhani font-bold text-accent-emerald text-sm tracking-[0.3em]">LIVE AUCTION</span>
+            <>
+              <div className="text-[10px] font-rajdhani text-accent-emerald tracking-widest mb-4 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" /> NOW ON THE BLOCK
               </div>
 
-              <div className="mb-6">
+              <div className="relative mb-6">
                 <img
-                  src={currentPlayer.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentPlayer.name)}&background=0d1b2a&color=00d4ff&size=200`}
+                  src={currentPlayer.photo}
                   alt={currentPlayer.name}
-                  className="w-28 h-28 rounded-2xl border-2 border-accent-cyan/30 mx-auto mb-4 glow-cyan object-cover"
+                  className="w-48 h-48 rounded-2xl border-4 object-cover shadow-2xl"
+                  style={{ borderColor: leadingTeam?.color || 'hsl(var(--border))', boxShadow: leadingTeam ? `0 0 40px ${leadingTeam.color}60` : undefined }}
                 />
-                <h1 className="font-orbitron text-5xl md:text-7xl font-black text-foreground text-glow-cyan leading-none mb-3">
-                  {currentPlayer.name}
-                </h1>
-                <span className={`inline-block text-sm font-rajdhani font-bold px-4 py-1.5 rounded-full role-${currentPlayer.role}`}>
+                <div className={`absolute -top-2 -right-2 text-[10px] font-rajdhani font-bold px-2 py-1 rounded-full role-${currentPlayer.role}`}>
                   {roleEmojis[currentPlayer.role]} {currentPlayer.role.replace('-', ' ').toUpperCase()}
-                </span>
-                <div className="font-mono text-lg text-muted-foreground mt-2">
-                  Base: {formatPrice(currentPlayer.base_price)}
                 </div>
               </div>
 
-              <div className="mb-6">
-                <div className="text-xs font-rajdhani text-muted-foreground tracking-[0.3em] mb-2">CURRENT BID</div>
-                <div className="font-mono text-7xl md:text-9xl font-bold text-accent-cyan text-glow-cyan">
-                  {formatPrice(auctionState?.current_bid_amount || 0)}
-                </div>
-              </div>
+              <h1 className="font-orbitron font-black text-5xl text-foreground text-center mb-1">{currentPlayer.name}</h1>
+              <p className="text-muted-foreground font-rajdhani text-sm mb-6">{currentPlayer.subRole} · {currentPlayer.nationality.toUpperCase()}</p>
 
-              {leadingTeam && (
-                <div className="font-exo text-3xl font-bold mb-8" style={{ color: leadingTeam.color }}>
-                  {leadingTeam.name}
-                </div>
-              )}
+              <div className="text-center mb-4">
+                <div className="text-xs font-rajdhani text-muted-foreground tracking-widest mb-1">CURRENT BID</div>
+                <div className="font-mono text-7xl font-black text-accent-cyan text-glow-cyan">{formatPrice(auctionState!.current_bid_amount)}</div>
+                {leadingTeam && (
+                  <div className="font-exo text-2xl font-bold mt-2" style={{ color: leadingTeam.color }}>
+                    {leadingTeam.name}
+                  </div>
+                )}
+              </div>
 
               <AuctionTimer seconds={timerSeconds} large />
-              <div className="w-96 mx-auto mt-4 h-3 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-linear ${
-                    timerSeconds <= 5 ? 'bg-accent-crimson glow-crimson' : 'bg-accent-cyan glow-cyan'
-                  }`}
-                  style={{ width: `${(timerSeconds / 15) * 100}%` }}
-                />
+              <div className="w-80 h-2 bg-muted rounded-full overflow-hidden mt-3">
+                <div className={`h-full rounded-full transition-all duration-500 ${timerSeconds <= 5 ? 'bg-accent-crimson' : 'bg-accent-cyan'}`}
+                  style={{ width: `${(timerSeconds / (auctionState?.bid_reset_seconds || 15)) * 100}%` }} />
               </div>
-            </div>
+
+              <div className="mt-4 grid grid-cols-4 gap-3 text-center">
+                {[
+                  { label: 'BATTING', value: currentPlayer.batting },
+                  { label: 'BOWLING', value: currentPlayer.bowling },
+                  { label: 'FIELDING', value: currentPlayer.fielding },
+                  { label: 'RATING', value: currentPlayer.rating.toFixed(1) },
+                ].map(s => (
+                  <div key={s.label} className="bg-card/60 border border-border rounded-lg px-3 py-2">
+                    <div className="text-[9px] font-rajdhani text-muted-foreground tracking-wider">{s.label}</div>
+                    <div className="font-mono text-lg font-bold text-accent-gold">{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
           ) : (
             <div className="text-center">
-              <h1 className="font-orbitron text-4xl md:text-6xl font-black text-foreground mb-4">
-                BVRIT <span className="text-accent-orange">IPL AUCTION</span>
-              </h1>
-              <p className="font-exo text-2xl text-muted-foreground">
-                {auctionState?.status === 'complete' ? 'Auction Complete' : 'Waiting for Next Player...'}
-              </p>
-              <p className="font-rajdhani text-lg text-muted-foreground mt-2 tracking-wider">E-SUMMIT 2026</p>
+              <div className="font-orbitron text-3xl text-foreground mb-2">
+                {auctionState?.status === 'complete' ? '🏆 Auction Complete' : 'Awaiting Next Player'}
+              </div>
+              <div className="font-rajdhani text-muted-foreground">{auctionState?.status === 'complete' ? 'Thank you for participating!' : 'The auctioneer will introduce the next player shortly.'}</div>
             </div>
           )}
         </div>
 
-        <div className="border-l border-border/50 p-4 flex flex-col gap-4 overflow-hidden">
-          <div>
-            <h3 className="font-rajdhani font-bold text-xs text-muted-foreground tracking-[0.3em] mb-3">COMING UP NEXT</h3>
-            <div className="space-y-2">
-              {upcomingPlayers.map((p, i) => (
-                <div key={p.id} className="glass-card p-3 flex items-center gap-3">
-                  <span className="font-mono text-xs text-muted-foreground w-5">{i + 1}</span>
-                  <img
-                    src={p.image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=0d1b2a&color=00d4ff`}
-                    alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-exo font-semibold text-xs text-foreground truncate">{p.name}</div>
-                    <div className="font-mono text-[10px] text-accent-cyan">{formatPrice(p.base_price)}</div>
+        {/* Zone 4: Team Budgets (right panel) */}
+        <div className="w-72 border-l border-border flex flex-col overflow-hidden bg-background/50">
+          <TeamBudgetsPanel />
+        </div>
+      </div>
+
+      {/* Zone 3: Sold Ticker */}
+      <SoldTicker soldPlayers={soldPlayers} teams={teams} />
+
+      {/* Zone 5: Upcoming */}
+      {upcomingPlayers.length > 0 && (
+        <div className="flex-shrink-0 bg-card/60 border-t border-border px-4 py-2">
+          <div className="flex items-center gap-4">
+            <div className="text-[9px] font-rajdhani text-muted-foreground tracking-widest flex-shrink-0">UP NEXT ▸</div>
+            <div className="flex gap-3 overflow-hidden">
+              {upcomingPlayers.map(p => (
+                <div key={p.id} className="flex items-center gap-2 flex-shrink-0">
+                  <img src={p.photo} alt={p.name} className="w-7 h-7 rounded-lg border border-border object-cover" loading="lazy" />
+                  <div>
+                    <div className="text-[10px] font-medium text-foreground">{p.name}</div>
+                    <div className="font-mono text-[9px] text-accent-cyan">{formatPrice(p.basePrice)}</div>
                   </div>
                 </div>
               ))}
-              {upcomingPlayers.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No upcoming players</p>}
             </div>
-          </div>
-
-          <div className="flex-1 overflow-auto">
-            <h3 className="font-rajdhani font-bold text-xs text-muted-foreground tracking-[0.3em] mb-3">TEAM PURSES</h3>
-            <div className="space-y-2">
-              {teams.map(t => {
-                const pct = (t.purse / (t.initial_purse || 12000)) * 100;
-                const freeze = teamFreezes[t.id];
-                const freezeRem = teamFreezeRemaining[t.id] || 0;
-                const isLeading = t.id === auctionState?.leading_team_id;
-                return (
-                  <div key={t.id} className={`p-2 rounded-lg ${isLeading ? 'border border-accent-cyan/40 bg-accent-cyan/5' : 'bg-card/40'}`}>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-foreground font-medium truncate flex items-center gap-1">
-                        {t.name}
-                        {freeze && freezeRem > 0 && (
-                          <span className="font-mono text-accent-gold ml-1">🔒 {Math.ceil(freezeRem / 1000)}s</span>
-                        )}
-                      </span>
-                      <span className="font-mono text-muted-foreground">{formatPrice(t.purse)}</span>
-                    </div>
-                    <div className="w-full h-1 bg-muted rounded-full overflow-hidden">
-                      <div className={`h-full rounded-full ${pct > 60 ? 'bg-accent-emerald' : pct > 20 ? 'bg-accent-gold' : 'bg-accent-crimson'}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="col-span-2 border-t border-border/50 py-2 overflow-hidden">
-          <div className="flex items-center gap-2 h-8">
-            <span className="font-rajdhani font-bold text-xs text-accent-gold tracking-wider shrink-0 px-3">SOLD</span>
-            <div className="overflow-hidden flex-1">
-              <div className={`flex gap-6 ${soldPlayers.length > 3 ? 'animate-ticker' : ''}`} style={{ width: 'max-content' }}>
-                {(soldPlayers.length > 3 ? [...soldPlayers, ...soldPlayers] : soldPlayers).map((p, i) => (
-                  <span key={`${p.id}-${i}`} className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full" style={{ background: p.teamColor }} />
-                    {p.name} → {p.teamName} → {formatPrice(p.sold_price || 0)}
-                  </span>
-                ))}
-                {soldPlayers.length === 0 && <span className="text-xs text-muted-foreground">No players sold yet</span>}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-card/80 border-t border-border/50 px-6 py-2 flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-orbitron text-[10px]">E-SUMMIT 2026 | BVRIT E-CELL</span>
-        <span className="font-rajdhani tracking-wider">{auctionState?.current_phase?.toUpperCase() || 'MARQUEE'} PHASE</span>
-        <span className="font-mono">Phase: {auctionState?.status?.toUpperCase() || '—'}</span>
-      </div>
-
-      {showSold && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-md flex items-center justify-center">
-          <div className="text-center animate-sold-stamp">
-            <div className="font-orbitron text-6xl font-black text-accent-gold text-glow-gold border-4 border-accent-gold px-8 py-4 -rotate-12">SOLD!</div>
-            {soldInfo.team && (
-              <div className="font-exo text-3xl font-bold mt-4" style={{ color: soldInfo.color || undefined }}>
-                → {soldInfo.team} for {formatPrice(soldInfo.price)}
-              </div>
-            )}
           </div>
         </div>
       )}

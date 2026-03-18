@@ -5,7 +5,7 @@ import { PlayerRole, PlayerCategory } from '@/data/players';
 import { Search } from 'lucide-react';
 
 export default function Players() {
-  const { state } = useAuction();
+  const { players } = useAuction();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<PlayerRole | 'all'>('all');
   const [catFilter, setCatFilter] = useState<PlayerCategory | 'all'>('all');
@@ -14,7 +14,7 @@ export default function Players() {
   const [visible, setVisible] = useState(20);
 
   const filtered = useMemo(() => {
-    let list = state.players;
+    let list = players;
     if (search) {
       const q = search.toLowerCase();
       list = list.filter(p => p.name.toLowerCase().includes(q));
@@ -29,7 +29,7 @@ export default function Players() {
       return a.name.localeCompare(b.name);
     });
     return list;
-  }, [state.players, search, roleFilter, catFilter, natFilter, sortBy]);
+  }, [players, search, roleFilter, catFilter, natFilter, sortBy]);
 
   const roles: { value: PlayerRole | 'all'; label: string }[] = [
     { value: 'all', label: 'ALL' },
@@ -57,7 +57,7 @@ export default function Players() {
             <p className="text-muted-foreground text-sm mt-1">Showing {Math.min(visible, filtered.length)} of {filtered.length} players</p>
           </div>
           <span className="font-mono text-sm bg-accent-cyan/10 text-accent-cyan px-3 py-1.5 rounded-full border border-accent-cyan/20">
-            {state.players.length} TOTAL
+            {players.length} TOTAL
           </span>
         </div>
 

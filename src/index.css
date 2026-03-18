@@ -183,3 +183,42 @@
 .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
 .animate-sold-stamp { animation: sold-stamp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
 .animate-ticker { animation: ticker-scroll 30s linear infinite; }
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.animate-marquee {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee 40s linear infinite;
+}
+.animate-marquee:hover { animation-play-state: paused; }
+
+@keyframes bounce-in {
+  0% { transform: translateX(-50%) translateY(40px); opacity: 0; }
+  60% { transform: translateX(-50%) translateY(-8px); opacity: 1; }
+  100% { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+.animate-bounce-in { animation: bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+
+/* Freeze ring / RTM ring styles */
+.rtm-overlay-shadow { box-shadow: 0 0 80px rgba(168, 85, 247, 0.5); }
+
+/* Btn variants */
+.btn-gold {
+  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg font-rajdhani font-bold tracking-wider transition-all;
+  background: hsl(51 100% 50% / 0.15);
+  color: hsl(51 100% 50%);
+  border: 1px solid hsl(51 100% 50% / 0.3);
+}
+.btn-gold:hover { background: hsl(51 100% 50% / 0.25); }
+.btn-gold:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-crimson {
+  @apply inline-flex items-center gap-2 px-4 py-2 rounded-lg font-rajdhani font-bold tracking-wider transition-all;
+  background: hsl(0 100% 50% / 0.15);
+  color: hsl(0 100% 60%);
+  border: 1px solid hsl(0 100% 50% / 0.3);
+}
+.btn-crimson:hover { background: hsl(0 100% 50% / 0.25); }

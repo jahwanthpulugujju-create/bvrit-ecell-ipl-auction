@@ -10,7 +10,7 @@ const navLinks = [
 ];
 
 function CountdownTimer() {
-  const target = new Date('2026-04-05T10:00:00+05:30').getTime();
+  const target = new Date('2026-03-25T10:00:00+05:30').getTime();
   const [diff, setDiff] = useState(target - Date.now());
 
   useEffect(() => {
@@ -35,7 +35,6 @@ export default function Navbar() {
   const [open, setOpen] = useState(false);
   const location = useLocation();
 
-  // Hide navbar on display page
   if (location.pathname === '/display') return null;
 
   return (

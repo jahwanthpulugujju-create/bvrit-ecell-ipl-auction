@@ -15,6 +15,7 @@ const statusColors: Record<string, string> = {
   'sold': 'status-sold',
   'unsold': 'status-unsold',
   'live': 'status-live',
+  'pending_sale': 'status-live',
 };
 
 const categoryColors: Record<string, string> = {
@@ -36,12 +37,21 @@ export default function PlayerCard({ player, compact }: Props) {
   if (compact) {
     return (
       <div className="glass-card p-3 flex items-center gap-3 hover:border-accent-cyan/30 transition-all">
-        <img src={player.photo} alt={player.name} className="w-10 h-10 rounded-full border border-border" loading="lazy" />
+        <img
+          src={player.photo}
+          alt={player.name}
+          className="w-10 h-10 rounded-full border border-border object-cover"
+          loading="lazy"
+          onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0c1420&color=e8f4fd&size=64`; }}
+        />
         <div className="flex-1 min-w-0">
           <div className="font-exo font-semibold text-sm text-foreground truncate">{player.name}</div>
-          <span className={`inline-block text-[10px] font-rajdhani font-semibold px-1.5 py-0.5 rounded ${roleColors[player.role]}`}>
-            {roleEmojis[player.role]} {player.role.replace('-', ' ').toUpperCase()}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-block text-[10px] font-rajdhani font-semibold px-1.5 py-0.5 rounded ${roleColors[player.role]}`}>
+              {roleEmojis[player.role]} {player.role.replace('-', ' ').toUpperCase()}
+            </span>
+            <span className="text-[10px] text-muted-foreground">{player.franchise}</span>
+          </div>
         </div>
         <span className="font-mono text-sm text-accent-cyan font-semibold">{formatPrice(player.basePrice)}</span>
       </div>
@@ -66,10 +76,17 @@ export default function PlayerCard({ player, compact }: Props) {
 
       <div className="p-5">
         <div className="flex items-start gap-4 mb-4">
-          <img src={player.photo} alt={player.name} className="w-16 h-16 rounded-xl border-2 border-border" loading="lazy" />
+          <img
+            src={player.photo}
+            alt={player.name}
+            className="w-16 h-16 rounded-xl border-2 border-border object-cover"
+            loading="lazy"
+            onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=0c1420&color=e8f4fd&size=128`; }}
+          />
           <div className="flex-1 min-w-0">
             <h3 className="font-exo font-bold text-foreground text-lg leading-tight truncate">{player.name}</h3>
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
+            <p className="text-[10px] text-muted-foreground mb-1">{player.franchise}</p>
+            <div className="flex flex-wrap gap-1.5 mt-1">
               <span className={`text-[10px] font-rajdhani font-semibold px-2 py-0.5 rounded-full ${roleColors[player.role]}`}>
                 {roleEmojis[player.role]} {player.role.replace('-', ' ').toUpperCase()}
               </span>
@@ -111,20 +128,14 @@ export default function PlayerCard({ player, compact }: Props) {
           ))}
         </div>
 
-        {/* Quick stats */}
-        <div className="grid grid-cols-2 gap-2 text-center">
-          <div className="bg-muted/50 rounded-lg p-2">
-            <div className="text-[10px] font-rajdhani text-muted-foreground">MATCHES</div>
-            <div className="font-mono text-sm font-semibold text-foreground">{player.matches}</div>
-          </div>
-          <div className="bg-muted/50 rounded-lg p-2">
-            <div className="text-[10px] font-rajdhani text-muted-foreground">{player.role === 'batsman' || player.role === 'wicket-keeper' ? 'RUNS' : 'WKTS'}</div>
-            <div className="font-mono text-sm font-semibold text-foreground">{player.role === 'batsman' || player.role === 'wicket-keeper' ? player.runs : player.wickets}</div>
-          </div>
+        {/* Bowling style info */}
+        <div className="bg-muted/50 rounded-lg p-2 mb-4 text-center">
+          <div className="text-[10px] font-rajdhani text-muted-foreground">BOWLING STYLE</div>
+          <div className="font-mono text-xs font-semibold text-foreground">{player.bowlingStyle}</div>
         </div>
 
         {/* Status & sold info */}
-        <div className="mt-4 flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <span className={`text-[10px] font-rajdhani font-bold px-2.5 py-1 rounded-full border ${statusColors[player.status]}`}>
             {player.status.toUpperCase()}
           </span>

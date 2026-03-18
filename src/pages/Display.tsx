@@ -142,7 +142,7 @@ export default function Display() {
       <div className="bg-card/80 border-t border-border/50 px-6 py-2 flex items-center justify-between text-xs text-muted-foreground">
         <span className="font-orbitron text-[10px]">E-SUMMIT 2026 | BVRIT E-CELL</span>
         <span className="font-rajdhani tracking-wider">{state.currentPhase.toUpperCase()} PHASE</span>
-        <span className="font-mono">Sold: {state.soldCount}/250 • Value: {formatPrice(state.totalValue)}</span>
+        <span className="font-mono">Sold: {state.soldCount}/{state.players.length} • Value: {formatPrice(state.totalValue)}</span>
       </div>
     </div>
   );

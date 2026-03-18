@@ -191,12 +191,12 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
         { data: squadData },
         { data: unsoldLogs },
       ] = await Promise.all([
-        supabase.from('auction_state').select('*').single(),
+        supabase.from('auction_state').select('*').limit(1).maybeSingle(),
         supabase.from('teams').select('*').eq('is_active', true).order('name'),
         supabase.from('team_player_freezes').select('*'),
         supabase.from('team_global_cooldowns').select('*'),
-        supabase.from('rtm_state').select('*').single(),
-        supabase.from('auction_config').select('*').single(),
+        supabase.from('rtm_state').select('*').limit(1).maybeSingle(),
+        supabase.from('auction_config').select('*').limit(1).maybeSingle(),
         supabase.from('team_squads').select('player_id, team_id, purchase_price'),
         supabase.from('auction_log').select('player_id').eq('type', 'unsold'),
       ]);

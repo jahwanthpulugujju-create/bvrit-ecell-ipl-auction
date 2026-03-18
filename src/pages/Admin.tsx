@@ -2,8 +2,9 @@ import { useState, useMemo } from 'react';
 import { useAuction, formatPrice } from '@/context/AuctionContext';
 import AuctionTimer, { TimerBar } from '@/components/AuctionTimer';
 import PlayerCard from '@/components/PlayerCard';
-import { roleEmojis } from '@/data/players';
-import { Search, Play, Pause, RotateCcw, Hammer, X, Undo2, Users, Settings, BarChart3, Eye } from 'lucide-react';
+import { roleEmojis, Player } from '@/data/players';
+import { createTeamSlug, generateTeamPassword, hashTeamPassword, EMPTY_ROLE_COUNTS, Team } from '@/data/teams';
+import { Search, Play, Pause, RotateCcw, Hammer, X, Undo2, Users, Settings, BarChart3, Eye, Plus, Key, Lock, Unlock } from 'lucide-react';
 
 export default function Admin() {
   const [authed, setAuthed] = useState(() => sessionStorage.getItem('admin_auth') === '1');

@@ -1,0 +1,540 @@
+Looking at what Lovable completed, here is your exact next prompt to paste:
+
+---
+
+# 🏏 BVRIT IPL AUCTION — NEXT SPRINT PROMPT
+
+**Context:** The database schema is complete, 75 players are imported, bid freeze logic is implemented, and homepage is fixed. Now complete the three remaining items: Admin team CRUD with password generation, team dashboard authentication, and full Supabase real-time wiring across all three interfaces.
+
+---
+
+## SPRINT GOAL
+
+Wire everything into a single working system where:
+1. Admin creates teams with passwords in the admin panel
+2. Teams log in at `/team/:slug` using their password to access RTM
+3. All three interfaces (admin, team dashboard, projector display) sync live via Supabase Realtime within 500ms of any state change
+
+---
+
+## 1. ADMIN PANEL — TEAM CREATION + CRUD
+
+### 1.1 Team Management Tab (inside existing admin sidebar)
+
+Add a "👥 Teams" tab to the admin sidebar. This tab must show:
+
+**Teams Table** with columns:
+`Team Name | Slug | City | Purse (₹ Cr) | Squad Size | RTM Cards | Status | Actions`
+
+Each row has: ✏️ Edit | 🔑 Reset Password | 💰 Adjust Purse | 📢 Announce | 🗑️ Delete
+
+**Status badge:** Active (cyan dot) | Inactive (muted dot)
+
+### 1.2 Add New Team Drawer
+
+`[+ Add New Team]` button (orange glow, top right) → slide-in drawer from right.
+
+Drawer styling: `background: var(--bg-card); backdrop-filter: blur(20px); border-left: 2px solid var(--border-active); width: 420px; height: 100vh; position: fixed; right: 0; top: 0; z-index: 200; padding: 32px;`
+
+**Form fields (all validated before save):**
+
+- **Team Name** — text, required, max 40 chars, must be unique across all teams
+- **Slug** — auto-generated from team name (lowercase, hyphens, no spaces — e.g. "Mumbai Mavericks" → "mumbai-mavericks"), editable, URL-safe validation, unique
+- **City** — text input
+- **Team Color** — `<input type="color">` with hex output shown beside it in JetBrains Mono
+- **Initial Purse** — number input in Crores (default 100), displays as "₹100 Cr". Stored in Supabase as lakhs (multiply by 100).
+- **RTM Cards** — number input, default 2, range 0–5
+- **Is Active** — toggle switch, default ON
+
+**Password generation (critical):**
+- `[⚡ Generate Password]` button — generates a random 8-character alphanumeric string (uppercase + numbers, e.g. "BX7KR2QP")
+- Generated password shows in a **readonly styled input** with a 👁 show/hide toggle
+- A copy button copies it to clipboard with toast "Password copied!"
+- Password is stored in Supabase `teams` table as: `password_hash = btoa(slug + ":" + password)`
+- The raw password is shown to admin ONLY at creation time — it is never shown again after save
+- Warn admin with amber banner: "⚠️ Save this password now — it cannot be retrieved after closing this drawer"
+
+**On Save:**
+1. Validate all fields (inline errors with shake animation)
+2. Check slug uniqueness against Supabase `teams` table
+3. Show 800ms spinner on save button
+4. Insert into Supabase `teams` table: `{ name, slug, city, color, initial_purse, purse: initial_purse, rtm_remaining, password_hash, is_active: true, created_at: now() }`
+5. Close drawer with slide-out animation
+6. New team row appears highlighted in cyan for 2 seconds
+7. Toast: "✓ Team [Name] created"
+
+### 1.3 Download Team Credentials CSV
+
+`[📥 Download Credentials]` button (top of teams table, ghost cyan):
+
+Generates and immediately downloads a CSV file using `Blob + URL.createObjectURL`:
+
+```
+Team Name,Slug,Dashboard URL,Password,Initial Purse
+Mumbai Mavericks,mumbai-mavericks,https://[your-domain]/team/mumbai-mavericks,BX7KR2QP,₹100 Cr
+CSK Challengers,csk-challengers,https://[your-domain]/team/csk-challengers,PQ4MN8ZA,₹100 Cr
+```
+
+Filename: `bvrit_team_credentials_YYYYMMDD.csv`
+
+Admin distributes this CSV to team leads via WhatsApp/email before the event.
+
+### 1.4 Edit Team Drawer
+
+Same drawer as Add, pre-filled with existing team data. Password field shows "••••••••" (masked). `[🔑 Reset Password]` button generates a new password, shows it once with the same amber warning, updates `password_hash` in Supabase.
+
+### 1.5 Adjust Purse
+
+Clicking 💰 opens an inline expansion below the team row (not a modal):
+```
+Adjust Purse for [Team Name]
+Current: ₹X Cr
+Adjustment: [+/-] [number input] Cr
+Reason: [text input, required]
+[Apply] [Cancel]
+```
+On apply: update `teams.purse` in Supabase, insert into `auction_log` with `type: "admin_purse_adjustment"`, `reason`, `actor: "admin"`.
+
+### 1.6 Send Announcement
+
+Clicking 📢 opens an inline expansion:
+```
+Announcement to all dashboards
+Message: [text input, max 120 chars, char counter]
+[📤 Send] [Cancel]
+```
+On send: insert into Supabase `announcements` table `{ message, created_at: now() }`. All `/team/:slug` pages receive this via Supabase Realtime and display it as an orange-border toast for 5 seconds.
+
+### 1.7 Delete Team
+
+Only allowed if `squad` is empty (no players bought). Otherwise: trash icon disabled + tooltip "Cannot delete team with players in squad." On click: inline confirmation row expansion. On confirm: delete from Supabase, row animates out (opacity 0, height 0, 300ms).
+
+---
+
+## 2. TEAM DASHBOARD AUTHENTICATION (`/team/:slug`)
+
+### 2.1 Public View vs Authenticated View
+
+**Public view (anyone, no login):** Full team dashboard is visible — current auction, their squad, purse, upcoming players. Read-only. This is intentional so teams can view on any device.
+
+**Authenticated view (team password entered):** Unlocks RTM actions. A lock icon badge appears in the top-right of the dashboard indicating auth status.
+
+### 2.2 Team Login Flow
+
+When team navigates to `/team/:slug`:
+1. Load team data from Supabase using the slug
+2. If slug not found: show full-page "Team Not Found" error card (dark, cyan border, "This team dashboard doesn't exist")
+3. If found: render full dashboard immediately (public view)
+4. In the top-right of the dashboard header, show: `🔒 Unlock RTM` button (small, ghost purple)
+
+Clicking `🔒 Unlock RTM`:
+- Opens a centered modal (dark glassmorphism card):
+  ```
+  🔐 Authenticate Your Team
+  ━━━━━━━━━━━━━━━━━━━━━━━━
+  Team: [Team Name]
+  
+  Enter team password:
+  [••••••••] 👁
+  
+  [Authenticate]  [Cancel]
+  ```
+- On submit: compute `btoa(slug + ":" + enteredPassword)` and compare against `teams.password_hash` from Supabase
+- If match: `sessionStorage["team_auth_" + slug] = "authenticated"`, close modal, button changes to `✅ Authenticated` (green, non-clickable), RTM buttons activate
+- If no match: input shakes + red border + toast "❌ Incorrect password"
+- Max 3 attempts per session — after 3 fails: lock button for 60s with countdown
+
+### 2.3 RTM Button State
+
+RTM button on team dashboard:
+- **Not authenticated:** `[🔒 Use RTM — Authenticate First]` — grey, disabled, cursor not-allowed. Clicking shows tooltip "Enter your team password to use RTM"
+- **Authenticated:** `[🟣 USE RTM — Match ₹X Cr]` — purple gradient + glow, active
+
+### 2.4 Session Persistence
+
+`sessionStorage["team_auth_" + slug]` persists for the browser session (survives page refresh, clears on tab/browser close). On mount: check sessionStorage — if authenticated, skip modal and show activated RTM immediately.
+
+---
+
+## 3. SUPABASE REAL-TIME WIRING — ALL THREE INTERFACES
+
+### 3.1 Supabase Tables to Wire (use existing schema)
+
+Enable Supabase Realtime on these tables in Supabase Dashboard → Database → Replication:
+- `auction_state`
+- `teams`
+- `players`
+- `bids`
+- `team_player_freezes`
+- `rtm_state`
+- `announcements`
+- `auction_log`
+
+### 3.2 Supabase Client Setup
+
+Create `/src/lib/supabase.ts`:
+```typescript
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+```
+
+### 3.3 Admin Panel — Real-Time Subscriptions
+
+In Auction Control tab, subscribe to these channels on mount (unsubscribe on unmount):
+
+```typescript
+// Auction state changes
+supabase.channel('auction-state')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'auction_state' }, 
+    (payload) => setAuctionState(payload.new))
+  .subscribe();
+
+// Freeze updates — update team button freeze rings
+supabase.channel('freezes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'team_player_freezes' },
+    (payload) => updateFreezeState(payload.new))
+  .subscribe();
+
+// New bids — update bid feed in Live Monitor
+supabase.channel('bids')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'bids' },
+    (payload) => prependBidFeed(payload.new))
+  .subscribe();
+
+// Team purse changes — update team buttons
+supabase.channel('teams')
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'teams' },
+    (payload) => updateTeamState(payload.new))
+  .subscribe();
+```
+
+### 3.4 Team Dashboard — Real-Time Subscriptions
+
+On `/team/:slug` mount, subscribe to:
+
+```typescript
+// Auction state — update current player, bid, timer, last_sold
+supabase.channel('auction-state-team')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'auction_state' },
+    handleAuctionStateChange)
+  .subscribe();
+
+// RTM state — show/hide RTM overlay
+supabase.channel('rtm-state')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'rtm_state' },
+    handleRtmStateChange)
+  .subscribe();
+
+// This team's data — update purse, squad, role counts
+supabase.channel('my-team')
+  .on('postgres_changes', { 
+    event: 'UPDATE', schema: 'public', table: 'teams',
+    filter: `slug=eq.${slug}` 
+  }, handleMyTeamChange)
+  .subscribe();
+
+// Freeze state for this team — show/hide freeze banner
+supabase.channel('my-freezes')
+  .on('postgres_changes', { 
+    event: '*', schema: 'public', table: 'team_player_freezes',
+    filter: `team_id=eq.${teamId}` 
+  }, handleFreezeChange)
+  .subscribe();
+
+// Announcements — show toast
+supabase.channel('announcements')
+  .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' },
+    (payload) => showToast(payload.new.message, 'announcement'))
+  .subscribe();
+```
+
+**When `auction_state.last_sold` changes:** trigger SOLD animation (dark overlay + confetti burst + "SOLD TO [TEAM]" in Orbitron). Show for 3 seconds then clear.
+
+**When `auction_state.timer_expires_at` changes:** reset local `setInterval` countdown using `timer_expires_at - Date.now()` as the new remaining value. All clients stay within 100ms of each other this way.
+
+**Freeze banner logic:**
+```typescript
+function handleFreezeChange(payload) {
+  const freeze = payload.new;
+  if (freeze.team_id !== myTeamId) return;
+  if (freeze.player_id !== currentPlayerId) return;
+  
+  const remaining = Math.max(0, freeze.freeze_expires_at - Date.now());
+  if (remaining > 0) {
+    setFreezeRemaining(remaining);
+    setShowFreezeBanner(true);
+    // Start local countdown — no extra Supabase reads
+    const interval = setInterval(() => {
+      const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
+      setFreezeRemaining(rem);
+      if (rem <= 0) {
+        setShowFreezeBanner(false);
+        clearInterval(interval);
+      }
+    }, 100);
+  }
+}
+```
+
+### 3.5 Projector Display — Real-Time Subscriptions
+
+On `/display` mount, subscribe to:
+
+```typescript
+supabase.channel('display-auction')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'auction_state' },
+    handleAuctionStateChange)
+  .subscribe();
+
+supabase.channel('display-teams')
+  .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'teams' },
+    handleTeamUpdate)
+  .subscribe();
+
+supabase.channel('display-rtm')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'rtm_state' },
+    handleRtmChange)
+  .subscribe();
+
+// Sold log — prepend to sold ticker
+supabase.channel('display-log')
+  .on('postgres_changes', { 
+    event: 'INSERT', schema: 'public', table: 'auction_log',
+    filter: `type=eq.sold`
+  }, prependSoldTicker)
+  .subscribe();
+
+// Freeze updates — update lock icons in team budgets zone
+supabase.channel('display-freezes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'team_player_freezes' },
+    handleDisplayFreezeUpdate)
+  .subscribe();
+```
+
+**Display freeze lock logic (Zone 4 — Team Budgets):**
+```typescript
+function handleDisplayFreezeUpdate(payload) {
+  const freeze = payload.new;
+  const teamId = freeze.team_id;
+  
+  setTeamFreezes(prev => ({ ...prev, [teamId]: freeze }));
+  
+  // Local countdown — compute from freeze_expires_at every 1s
+  // No additional Supabase reads
+  const interval = setInterval(() => {
+    const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
+    setTeamFreezeRemaining(prev => ({ ...prev, [teamId]: rem }));
+    if (rem <= 0) {
+      setTeamFreezes(prev => { const n = {...prev}; delete n[teamId]; return n; });
+      clearInterval(interval);
+    }
+  }, 1000);
+}
+```
+
+In Zone 4 render, for each team:
+```tsx
+<div className="team-budget-row" style={{ borderColor: isLeading ? 'var(--accent-primary)' : 'transparent' }}>
+  <span className="team-name">{team.name}</span>
+  {teamFreezes[team.id] && teamFreezeRemaining[team.id] > 0 && (
+    <span className="freeze-lock">
+      🔒 {Math.ceil(teamFreezeRemaining[team.id] / 1000)}s
+    </span>
+  )}
+  <div className="purse-bar" style={{ '--fill': getPursePercent(team) }} />
+  <span className="purse-amount">₹{(team.purse / 100).toFixed(0)} Cr</span>
+</div>
+```
+
+`.freeze-lock` styling: `color: var(--accent-amber); font-family: 'JetBrains Mono'; font-size: 13px; margin-left: 8px;`
+
+### 3.6 Connection Status Indicator
+
+All three interfaces must show a connection status dot in the top-right corner (or top of admin sidebar):
+
+```tsx
+// Listen to Supabase channel status
+channel.on('system', {}, (status) => {
+  if (status === 'SUBSCRIBED') setConnected(true);
+  if (status === 'CLOSED' || status === 'CHANNEL_ERROR') setConnected(false);
+});
+```
+
+UI: small dot + label
+- 🟢 Connected (green dot, "Live")
+- 🟡 Reconnecting... (amber dot, pulsing)
+- 🔴 Offline (red dot, "Offline — data may be stale")
+
+On reconnect: fetch full current `auction_state` from Supabase immediately to resync. Show toast "🔄 Reconnected — synced."
+
+### 3.7 Initial Data Load Pattern
+
+On every page mount, always fetch initial state FIRST (one-time query), THEN subscribe to realtime. Never depend on realtime to deliver the initial state:
+
+```typescript
+// CORRECT pattern — use this on every page
+useEffect(() => {
+  // 1. Fetch initial data
+  const { data } = await supabase.from('auction_state').select('*').single();
+  setAuctionState(data);
+  
+  // 2. Then subscribe for updates
+  const channel = supabase.channel('auction-state')
+    .on('postgres_changes', ..., handleChange)
+    .subscribe();
+  
+  return () => supabase.removeChannel(channel);
+}, []);
+```
+
+---
+
+## 4. FREEZE SYSTEM — ADMIN PANEL BID BUTTON VISUAL (Full Implementation)
+
+Each team button in Auction Control must show the freeze state visually. Use this exact component pattern:
+
+```tsx
+function TeamBidButton({ team, currentPlayerId, onBid }) {
+  const [freezeRemaining, setFreezeRemaining] = useState(0);
+  const [globalCooldown, setGlobalCooldown] = useState(0);
+  const isFrozen = freezeRemaining > 0;
+  const isGlobalCooldown = globalCooldown > 0;
+
+  // Subscribe to freeze state for this team + current player
+  useEffect(() => {
+    // Fetch current freeze from Supabase
+    // Start local countdown from freeze_expires_at
+    // Update every 100ms
+  }, [team.id, currentPlayerId]);
+
+  const ringProgress = isFrozen 
+    ? (freezeRemaining / (team.currentFreezeSeconds * 1000)) * 100 
+    : 0;
+
+  return (
+    <button
+      className={`team-bid-btn ${isFrozen ? 'frozen' : ''}`}
+      style={{
+        '--team-color': team.color,
+        '--ring-progress': ringProgress + '%'
+      }}
+      onClick={() => !isFrozen && !isGlobalCooldown && onBid(team)}
+      disabled={isFrozen || isGlobalCooldown}
+    >
+      {/* Circular freeze ring overlay — CSS only */}
+      {isFrozen && (
+        <div className="freeze-ring-overlay">
+          <svg viewBox="0 0 36 36" className="freeze-ring-svg">
+            <circle className="freeze-ring-track" cx="18" cy="18" r="15.9" />
+            <circle 
+              className="freeze-ring-fill" 
+              cx="18" cy="18" r="15.9"
+              style={{ strokeDashoffset: 100 - ringProgress }}
+            />
+          </svg>
+          <span className="freeze-timer">🔒 {Math.ceil(freezeRemaining / 1000)}s</span>
+        </div>
+      )}
+      
+      <div className="team-btn-content">
+        <div className="team-color-bar" style={{ background: team.color }} />
+        <span className="team-name">{team.name}</span>
+        <span className="team-purse">₹{(team.purse / 100).toFixed(0)} Cr</span>
+      </div>
+    </button>
+  );
+}
+```
+
+CSS for freeze ring:
+```css
+.team-bid-btn {
+  position: relative;
+  overflow: hidden;
+  transition: all 200ms ease;
+}
+
+.team-bid-btn.frozen {
+  background: rgba(245,158,11,0.1) !important;
+  border-color: var(--accent-amber) !important;
+  cursor: not-allowed;
+}
+
+.freeze-ring-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.6);
+  z-index: 10;
+}
+
+.freeze-ring-svg {
+  width: 48px;
+  height: 48px;
+  transform: rotate(-90deg);
+}
+
+.freeze-ring-track {
+  fill: none;
+  stroke: rgba(245,158,11,0.2);
+  stroke-width: 3;
+}
+
+.freeze-ring-fill {
+  fill: none;
+  stroke: var(--accent-amber);
+  stroke-width: 3;
+  stroke-dasharray: 100;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 100ms linear;
+  filter: drop-shadow(0 0 4px var(--accent-amber));
+}
+
+.freeze-timer {
+  position: absolute;
+  font-family: 'JetBrains Mono';
+  font-size: 11px;
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+/* When freeze expires — green flash */
+.team-bid-btn.freeze-expired {
+  animation: freezeExpiredFlash 200ms ease;
+}
+
+@keyframes freezeExpiredFlash {
+  0% { background: rgba(0,255,136,0.3); }
+  100% { background: transparent; }
+}
+```
+
+---
+
+## 5. FINAL WIRING CHECKLIST
+
+After implementing all of the above, these must all work end-to-end:
+
+- [ ] Admin creates a team → appears in teams table → credentials CSV downloads with correct password
+- [ ] Team opens `/team/their-slug` → dashboard loads with live data from Supabase
+- [ ] Team clicks "Unlock RTM" → password modal → correct password → authenticated badge shows → RTM buttons activate
+- [ ] Wrong password → 3 attempts → 60s lockout
+- [ ] Admin registers bid for a team → freeze ring appears on that team's button within 500ms
+- [ ] Freeze ring drains over freeze duration (computed from `freeze_expires_at`) → green flash on expiry
+- [ ] Same team button click during freeze → rejected with amber toast (no bid written)
+- [ ] Team dashboard shows freeze banner with circular countdown during active freeze
+- [ ] Display page shows amber 🔒 lock + seconds next to frozen team in Zone 4
+- [ ] Admin sends announcement → toast appears on all `/team/:slug` pages within 1s
+- [ ] Player sold → SOLD overlay fires on both `/display` AND all connected `/team/:slug` pages
+- [ ] All three interfaces show connection status dot (green/amber/red)
+- [ ] Reconnect after network drop → resync → toast "Reconnected — synced"
+- [ ] Timer ticks identically on admin, display, and team pages (synced via `timer_expires_at`)
+- [ ] Freeze entries cleared when player sold, unsold, or re-introduced
+- [ ] Admin manually clears freeze from Team Quick View → freeze ring disappears within 500ms on all clients
+- [ ] Freeze config editable in Settings tab → new bids immediately use updated config values

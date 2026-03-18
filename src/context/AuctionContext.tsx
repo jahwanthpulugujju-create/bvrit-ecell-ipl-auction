@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, ReactNode, useEffect } from 'react';
 import { Player, initialPlayers } from '@/data/players';
 import { Team, initialTeams, EMPTY_ROLE_COUNTS } from '@/data/teams';
+import { supabase } from '@/lib/supabase';
 
 export type AuctionStatus = 'pre' | 'retention' | 'live' | 'pending_sale' | 'rtm_window' | 'complete';
 export type AuctionPhase = 'marquee' | 'premium' | 'mid-tier' | 'budget';
@@ -36,7 +37,7 @@ interface AuctionState {
     maxFreezeSeconds: number;
     globalCooldownSeconds: number;
   };
-  globalCooldowns: Record<string, number>; // teamId -> expires_at
+  globalCooldowns: Record<string, number>;
 }
 
 interface LogEntry {
@@ -63,6 +64,7 @@ type Action =
   | { type: 'ADD_TEAM'; team: Team }
   | { type: 'REMOVE_TEAM'; teamId: string }
   | { type: 'UPDATE_TEAM'; teamId: string; updates: Partial<Team> }
+  | { type: 'SET_TEAMS'; teams: Team[] }
   | { type: 'IMPORT_PLAYERS'; players: Player[] }
   | { type: 'ADD_PLAYER'; player: Player }
   | { type: 'REMOVE_PLAYER'; playerId: string }
@@ -73,7 +75,7 @@ type Action =
   | { type: 'UNDO_LAST' }
   | { type: 'LOAD_STATE'; state: AuctionState };
 
-function formatPrice(lakhs: number): string {
+export function formatPrice(lakhs: number): string {
   if (lakhs >= 100) return `₹${(lakhs / 100).toFixed(2)} Cr`;
   return `₹${lakhs} L`;
 }
@@ -98,8 +100,35 @@ function isTeamGlobalCooldown(state: AuctionState, teamId: string): { frozen: bo
   return { frozen: false, remaining: 0 };
 }
 
+function mapSupabaseTeam(t: any, squads: any[], allPlayers: Player[]): Team {
+  const teamSquads = squads.filter(s => s.team_id === t.id);
+  const playerIds = teamSquads.map((s: any) => s.player_id);
+  const roleCounts: Record<string, number> = { ...EMPTY_ROLE_COUNTS };
+  playerIds.forEach((pid: string) => {
+    const p = allPlayers.find(pl => pl.id === pid);
+    if (p) roleCounts[p.role] = (roleCounts[p.role] || 0) + 1;
+  });
+  return {
+    id: t.id,
+    name: t.name,
+    slug: t.slug,
+    city: t.city,
+    color: t.color,
+    purse: t.purse,
+    initialPurse: t.initial_purse,
+    players: playerIds,
+    roleCounts,
+    rtmRemaining: t.rtm_remaining,
+    retainedPlayers: [],
+    passwordHash: t.password_hash,
+    isActive: t.is_active,
+  };
+}
+
 function reducer(state: AuctionState, action: Action): AuctionState {
   switch (action.type) {
+    case 'SET_TEAMS':
+      return { ...state, teams: action.teams };
     case 'SET_CURRENT_PLAYER': {
       const player = state.players.find(p => p.id === action.playerId);
       if (!player) return state;
@@ -107,7 +136,6 @@ function reducer(state: AuctionState, action: Action): AuctionState {
         p.id === action.playerId ? { ...p, status: 'live' as const } :
         p.status === 'live' ? { ...p, status: 'available' as const } : p
       );
-      // Clear freezes for previous player
       const freezes = state.freezes.filter(f => f.playerId !== state.currentPlayerId);
       return {
         ...state,
@@ -123,34 +151,22 @@ function reducer(state: AuctionState, action: Action): AuctionState {
     case 'PLACE_BID': {
       const team = state.teams.find(t => t.id === action.teamId);
       if (!team || !state.currentPlayerId) return state;
-
-      // Check freeze
       const freezeCheck = isTeamFrozen(state, action.teamId, state.currentPlayerId);
       if (freezeCheck.frozen) return state;
-
-      // Check global cooldown
       const globalCheck = isTeamGlobalCooldown(state, action.teamId);
       if (globalCheck.frozen) return state;
-
       const newBid = state.leadingTeamId ? state.currentBid + state.bidIncrement : state.currentBid;
       if (team.purse < newBid) return state;
-
-      // Compute freeze duration
       const freezeSecs = computeFreezeSecs(newBid, state.freezeConfig);
       const now = Date.now();
-
-      // Add freeze entry (upsert)
       const updatedFreezes = [
         ...state.freezes.filter(f => !(f.teamId === action.teamId && f.playerId === state.currentPlayerId)),
         { teamId: action.teamId, playerId: state.currentPlayerId, freezeExpiresAt: now + freezeSecs * 1000, freezeSeconds: freezeSecs, bidAmount: newBid }
       ];
-
-      // Add global cooldown
       const updatedGlobalCooldowns = {
         ...state.globalCooldowns,
         [action.teamId]: now + state.freezeConfig.globalCooldownSeconds * 1000,
       };
-
       return {
         ...state,
         currentBid: newBid,
@@ -184,7 +200,6 @@ function reducer(state: AuctionState, action: Action): AuctionState {
           roleCounts: { ...t.roleCounts, [player.role]: (t.roleCounts[player.role] || 0) + 1 },
         } : t
       );
-      // Clear freezes for this player
       const freezes = state.freezes.filter(f => f.playerId !== state.currentPlayerId);
       return {
         ...state,
@@ -230,7 +245,7 @@ function reducer(state: AuctionState, action: Action): AuctionState {
         }, ...state.auctionLog],
       };
     }
-    case 'TIMER_TICK':
+    case 'TIMER_TICK': {
       if (!state.timerRunning || state.timerSeconds <= 0) return state;
       const newSeconds = state.timerSeconds - 1;
       if (newSeconds <= 0 && state.leadingTeamId) {
@@ -240,6 +255,7 @@ function reducer(state: AuctionState, action: Action): AuctionState {
         return reducer({ ...state, timerSeconds: 0, timerRunning: false }, { type: 'MARK_UNSOLD' });
       }
       return { ...state, timerSeconds: newSeconds };
+    }
     case 'START_TIMER':
       return { ...state, timerRunning: true };
     case 'PAUSE_TIMER':
@@ -325,10 +341,10 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem('auction_state_v2');
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Ensure freezes and freezeConfig exist
         return {
           ...initial,
           ...parsed,
+          teams: initial.teams,
           freezes: parsed.freezes || [],
           freezeConfig: parsed.freezeConfig || initial.freezeConfig,
           globalCooldowns: parsed.globalCooldowns || {},
@@ -339,7 +355,8 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    localStorage.setItem('auction_state_v2', JSON.stringify(state));
+    const { teams: _, ...stateWithoutTeams } = state;
+    localStorage.setItem('auction_state_v2', JSON.stringify(stateWithoutTeams));
   }, [state]);
 
   useEffect(() => {
@@ -347,6 +364,48 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     const interval = setInterval(() => dispatch({ type: 'TIMER_TICK' }), 1000);
     return () => clearInterval(interval);
   }, [state.timerRunning]);
+
+  useEffect(() => {
+    let squadsData: any[] = [];
+    const loadTeams = async () => {
+      const { data: squads } = await supabase.from('team_squads').select('team_id, player_id');
+      squadsData = squads || [];
+      const { data: teams } = await supabase.from('teams').select('*').eq('is_active', true).order('name');
+      if (teams && teams.length > 0) {
+        dispatch({
+          type: 'SET_TEAMS',
+          teams: teams.map(t => mapSupabaseTeam(t, squadsData, initialPlayers)),
+        });
+      }
+    };
+    loadTeams();
+
+    const channel = supabase
+      .channel('context-teams')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, async () => {
+        const { data: squads } = await supabase.from('team_squads').select('team_id, player_id');
+        const { data: teams } = await supabase.from('teams').select('*').order('name');
+        if (teams) {
+          dispatch({
+            type: 'SET_TEAMS',
+            teams: teams.map(t => mapSupabaseTeam(t, squads || [], initialPlayers)),
+          });
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_squads' }, async () => {
+        const { data: squads } = await supabase.from('team_squads').select('team_id, player_id');
+        const { data: teams } = await supabase.from('teams').select('*').order('name');
+        if (teams) {
+          dispatch({
+            type: 'SET_TEAMS',
+            teams: teams.map(t => mapSupabaseTeam(t, squads || [], initialPlayers)),
+          });
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const getPlayer = useCallback((id: string) => state.players.find(p => p.id === id), [state.players]);
   const getTeam = useCallback((id: string) => state.teams.find(t => t.id === id), [state.teams]);
@@ -367,5 +426,3 @@ export function useAuction() {
   if (!ctx) throw new Error('useAuction must be inside AuctionProvider');
   return ctx;
 }
-
-export { formatPrice };

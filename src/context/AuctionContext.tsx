@@ -32,6 +32,7 @@ export interface AuctionStateDB {
   current_phase: string;
   bid_increment: number;
   bid_reset_seconds: number;
+  auction_queue: string[];
 }
 
 export interface TeamPlayerFreeze {

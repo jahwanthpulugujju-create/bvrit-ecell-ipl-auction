@@ -1,8 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAuction } from '@/context/AuctionContext';
 import PlayerCard from '@/components/PlayerCard';
 import { PlayerRole, PlayerCategory } from '@/data/players';
 import { Search } from 'lucide-react';
+
+const PAGE_SIZE = 24;
 
 export default function Players() {
   const { players } = useAuction();
@@ -11,7 +13,11 @@ export default function Players() {
   const [catFilter, setCatFilter] = useState<PlayerCategory | 'all'>('all');
   const [natFilter, setNatFilter] = useState<'all' | 'indian' | 'overseas'>('all');
   const [sortBy, setSortBy] = useState<'rating' | 'price' | 'name'>('rating');
-  const [visible, setVisible] = useState(20);
+  const [visible, setVisible] = useState(PAGE_SIZE);
+
+  useEffect(() => {
+    setVisible(PAGE_SIZE);
+  }, [search, roleFilter, catFilter, natFilter, sortBy]);
 
   const filtered = useMemo(() => {
     let list = players;
@@ -31,6 +37,18 @@ export default function Players() {
     return list;
   }, [players, search, roleFilter, catFilter, natFilter, sortBy]);
 
+  const roleCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: players.length };
+    players.forEach(p => { counts[p.role] = (counts[p.role] || 0) + 1; });
+    return counts;
+  }, [players]);
+
+  const catCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: players.length };
+    players.forEach(p => { counts[p.category] = (counts[p.category] || 0) + 1; });
+    return counts;
+  }, [players]);
+
   const roles: { value: PlayerRole | 'all'; label: string }[] = [
     { value: 'all', label: 'ALL' },
     { value: 'batsman', label: '🏏 BAT' },
@@ -48,13 +66,19 @@ export default function Players() {
     { value: 'budget', label: 'BUDGET' },
   ];
 
+  const visibleCount = Math.min(visible, filtered.length);
+  const hasMore = visible < filtered.length;
+
   return (
     <div className="min-h-screen bg-background pt-20 pb-12">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="section-title">Player Pool <span className="text-accent-cyan">2026</span></h1>
-            <p className="text-muted-foreground text-sm mt-1">Showing {Math.min(visible, filtered.length)} of {filtered.length} players</p>
+            <p className="text-muted-foreground text-sm mt-1">
+              Showing {visibleCount} of {filtered.length} players
+              {filtered.length !== players.length && ` (filtered from ${players.length} total)`}
+            </p>
           </div>
           <span className="font-mono text-sm bg-accent-cyan/10 text-accent-cyan px-3 py-1.5 rounded-full border border-accent-cyan/20">
             {players.length} TOTAL
@@ -68,7 +92,7 @@ export default function Players() {
             type="text"
             placeholder="Search players by name..."
             value={search}
-            onChange={e => { setSearch(e.target.value); setVisible(20); }}
+            onChange={e => setSearch(e.target.value)}
             className="w-full bg-card border border-border rounded-xl pl-12 pr-4 py-3 text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-accent-cyan/40 transition-colors"
           />
         </div>
@@ -79,14 +103,17 @@ export default function Players() {
             {cats.map(c => (
               <button
                 key={c.value}
-                onClick={() => { setCatFilter(c.value); setVisible(20); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
+                onClick={() => setCatFilter(c.value)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
                   catFilter === c.value
                     ? 'bg-accent-cyan text-background'
                     : 'bg-card text-muted-foreground hover:text-foreground border border-border'
                 }`}
               >
                 {c.label}
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${catFilter === c.value ? 'bg-black/20' : 'bg-muted/60'}`}>
+                  {catCounts[c.value] ?? 0}
+                </span>
               </button>
             ))}
           </div>
@@ -94,14 +121,17 @@ export default function Players() {
             {roles.map(r => (
               <button
                 key={r.value}
-                onClick={() => { setRoleFilter(r.value); setVisible(20); }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
+                onClick={() => setRoleFilter(r.value)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
                   roleFilter === r.value
                     ? 'bg-accent-cyan text-background'
                     : 'bg-card text-muted-foreground hover:text-foreground border border-border'
                 }`}
               >
                 {r.label}
+                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${roleFilter === r.value ? 'bg-black/20' : 'bg-muted/60'}`}>
+                  {roleCounts[r.value] ?? 0}
+                </span>
               </button>
             ))}
           </div>
@@ -122,6 +152,26 @@ export default function Players() {
           </div>
         </div>
 
+        {/* Nationality quick filter */}
+        <div className="flex gap-1.5 mb-6">
+          {(['all', 'indian', 'overseas'] as const).map(n => (
+            <button
+              key={n}
+              onClick={() => setNatFilter(n)}
+              className={`px-3 py-1 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
+                natFilter === n
+                  ? 'bg-accent-purple text-background'
+                  : 'bg-card text-muted-foreground hover:text-foreground border border-border'
+              }`}
+            >
+              {n === 'all' ? '🌐 ALL' : n === 'indian' ? '🇮🇳 INDIAN' : '✈️ OVERSEAS'}
+              <span className={`ml-1.5 text-[10px] font-mono px-1 py-0.5 rounded-full ${natFilter === n ? 'bg-black/20' : 'bg-muted/60'}`}>
+                {n === 'all' ? players.length : players.filter(p => p.nationality === n).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
         {/* Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.slice(0, visible).map(p => (
@@ -129,11 +179,21 @@ export default function Players() {
           ))}
         </div>
 
-        {visible < filtered.length && (
-          <div className="text-center mt-8">
-            <button onClick={() => setVisible(v => v + 20)} className="btn-ghost">
+        {filtered.length === 0 && (
+          <div className="text-center py-16 text-muted-foreground">
+            <div className="text-4xl mb-3">🔍</div>
+            <p>No players match your filters</p>
+          </div>
+        )}
+
+        {hasMore && (
+          <div className="text-center mt-8 space-y-2">
+            <button onClick={() => setVisible(v => v + PAGE_SIZE)} className="btn-ghost">
               Load More ({filtered.length - visible} remaining)
             </button>
+            <div className="text-xs text-muted-foreground">
+              {visibleCount} / {filtered.length} shown
+            </div>
           </div>
         )}
       </div>

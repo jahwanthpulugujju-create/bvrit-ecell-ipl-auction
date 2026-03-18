@@ -53,6 +53,10 @@ const OVERSEAS = new Set([
   'Finn Allen', 'Nicholas Pooran', 'Josh Inglis',
   'Quinton de Kock', 'Ryan Rickelton', 'Lhuan-dre Pretorius',
   'Phil Salt', 'Jordan Cox', 'Heinrich Klaasen',
+  // Batsmen
+  'Dewald Brevis', 'Pathum Nissanka', 'David Miller',
+  'Rovman Powell', 'Aiden Markram', 'Matthew Breetzke',
+  'Sherfane Rutherford', 'Shimron Hetmyer', 'Travis Head',
 ]);
 
 const IMAGE_URLS: Record<string, string> = {
@@ -82,6 +86,8 @@ const MARQUEE_PLAYERS = new Set([
   'Hardik Pandya','Ravindra Jadeja','Sunil Narine','Axar Patel',
   // Wicket-keepers
   'Rishabh Pant','MS Dhoni','KL Rahul','Jos Buttler',
+  // Batsmen
+  'Virat Kohli','Rohit Sharma','Yashasvi Jaiswal','Shubman Gill','Travis Head',
 ]);
 
 const PREMIUM_PLAYERS = new Set([
@@ -96,6 +102,9 @@ const PREMIUM_PLAYERS = new Set([
   // Wicket-keepers
   'Sanju Samson','Nicholas Pooran','Quinton de Kock','Heinrich Klaasen',
   'Phil Salt','Ishan Kishan',
+  // Batsmen
+  'Suryakumar Yadav','Shreyas Iyer','Tilak Varma','Sai Sudharsan',
+  'Aiden Markram','Ruturaj Gaikwad','Devdutt Padikkal',
 ]);
 
 const MID_TIER_PLAYERS = new Set([
@@ -111,6 +120,10 @@ const MID_TIER_PLAYERS = new Set([
   // Wicket-keepers
   'Dhruv Jurel','Ryan Rickelton','Finn Allen','Josh Inglis','Prabhsimran Singh',
   'Jitesh Sharma','Lhuan-dre Pretorius','Tristan Stubbs','Ben Duckett',
+  // Batsmen
+  'Ajinkya Rahane','David Miller','Shimron Hetmyer','Rinku Singh',
+  'Sherfane Rutherford','Shahrukh Khan','Rajat Patidar','Prithvi Shaw',
+  'Karun Nair','Angkrish Raghuvanshi','Rovman Powell','Vaibhav Suryavanshi',
 ]);
 
 function getCategory(name: string): PlayerCategory {
@@ -190,6 +203,11 @@ const RATING_OVERRIDES: Record<string, number> = {
   'MS Dhoni': 9.6, 'Rishabh Pant': 9.4, 'KL Rahul': 9.0, 'Jos Buttler': 9.1,
   'Sanju Samson': 8.7, 'Nicholas Pooran': 8.5, 'Quinton de Kock': 8.4,
   'Heinrich Klaasen': 8.6, 'Phil Salt': 8.2, 'Ishan Kishan': 8.1,
+  // Batsmen
+  'Virat Kohli': 9.7, 'Rohit Sharma': 9.5, 'Yashasvi Jaiswal': 9.2,
+  'Shubman Gill': 9.0, 'Travis Head': 8.9, 'Suryakumar Yadav': 8.8,
+  'Shreyas Iyer': 8.6, 'Ruturaj Gaikwad': 8.5, 'Tilak Varma': 8.3,
+  'Sai Sudharsan': 8.2, 'Aiden Markram': 8.1, 'Devdutt Padikkal': 7.9,
 };
 
 // ─── Avatar colour per role ───────────────────────────────────────────────────
@@ -480,16 +498,96 @@ function buildWicketKeeper(index: number, [name, franchise, battingStyle]: [stri
   };
 }
 
+// ─── Sheet 1: Batsmen — [name, franchise, battingStyle, bowlingStyle] ─────────
+// bowlingStyle is the part-time bowling style, or '—' for none
+
+const BATSMAN_DATA: [string, string, string, string][] = [
+  ['Ruturaj Gaikwad', 'Chennai Super Kings', 'RHB', '—'],
+  ['Ayush Mhatre', 'Chennai Super Kings', 'RHB', '—'],
+  ['Dewald Brevis', 'Chennai Super Kings', 'RHB', 'Right-arm Leg Spin'],
+  ['Sarfaraz Khan', 'Chennai Super Kings', 'RHB', 'Right-arm Leg Spin'],
+  ['Karun Nair', 'Delhi Capitals', 'RHB', 'Right-arm Off Spin'],
+  ['Prithvi Shaw', 'Delhi Capitals', 'RHB', '—'],
+  ['Sameer Rizvi', 'Delhi Capitals', 'RHB', '—'],
+  ['Ashutosh Sharma', 'Delhi Capitals', 'RHB', '—'],
+  ['Pathum Nissanka', 'Delhi Capitals', 'RHB', '—'],
+  ['Sahil Parakh', 'Delhi Capitals', 'LHB', 'Right-arm Off Spin'],
+  ['David Miller', 'Delhi Capitals', 'LHB', '—'],
+  ['Shubman Gill', 'Gujarat Titans', 'RHB', 'Right-arm Off Spin'],
+  ['Sai Sudharsan', 'Gujarat Titans', 'LHB', 'Right-arm Leg Spin'],
+  ['Shahrukh Khan', 'Gujarat Titans', 'RHB', 'Right-arm Off Spin'],
+  ['Rinku Singh', 'Kolkata Knight Riders', 'LHB', 'Right-arm Off Spin'],
+  ['Angkrish Raghuvanshi', 'Kolkata Knight Riders', 'RHB', 'Right-arm Off Spin'],
+  ['Ajinkya Rahane', 'Kolkata Knight Riders', 'RHB', '—'],
+  ['Manish Pandey', 'Kolkata Knight Riders', 'RHB', '—'],
+  ['Rovman Powell', 'Kolkata Knight Riders', 'RHB', 'Right-arm Medium'],
+  ['Aiden Markram', 'Lucknow Super Giants', 'RHB', 'Right-arm Off Spin'],
+  ['Himmat Singh', 'Lucknow Super Giants', 'RHB', '—'],
+  ['Matthew Breetzke', 'Lucknow Super Giants', 'RHB', '—'],
+  ['Akshat Raghuwanshi', 'Lucknow Super Giants', 'RHB', '—'],
+  ['Abdul Samad', 'Lucknow Super Giants', 'RHB', 'Right-arm Leg Spin'],
+  ['Rohit Sharma', 'Mumbai Indians', 'RHB', 'Right-arm Off Spin'],
+  ['Suryakumar Yadav', 'Mumbai Indians', 'RHB', 'Right-arm Medium'],
+  ['Tilak Varma', 'Mumbai Indians', 'LHB', 'Right-arm Off Spin'],
+  ['Sherfane Rutherford', 'Mumbai Indians', 'LHB', 'Right-arm Fast Medium'],
+  ['Danish Malewar', 'Mumbai Indians', 'RHB', 'Right-arm Leg Spin'],
+  ['Shreyas Iyer', 'Punjab Kings', 'RHB', 'Right-arm Leg Spin'],
+  ['Shashank Singh', 'Punjab Kings', 'RHB', 'Right-arm Medium'],
+  ['Priyansh Arya', 'Punjab Kings', 'LHB', '—'],
+  ['Pyla Avinash', 'Punjab Kings', 'RHB', '—'],
+  ['Suryansh Shedge', 'Punjab Kings', 'RHB', '—'],
+  ['Harnoor Singh', 'Punjab Kings', 'LHB', '—'],
+  ['Yashasvi Jaiswal', 'Rajasthan Royals', 'LHB', 'Right-arm Leg Spin'],
+  ['Shimron Hetmyer', 'Rajasthan Royals', 'LHB', '—'],
+  ['Shubham Dubey', 'Rajasthan Royals', 'LHB', 'Right-arm Off break'],
+  ['Vaibhav Suryavanshi', 'Rajasthan Royals', 'LHB', '—'],
+  ['Aman Rao', 'Rajasthan Royals', 'RHB', 'Right-arm Off Spin'],
+  ['Virat Kohli', 'Royal Challengers Bengaluru', 'RHB', 'Right-arm Medium'],
+  ['Rajat Patidar', 'Royal Challengers Bengaluru', 'RHB', 'Right-arm Off Spin'],
+  ['Devdutt Padikkal', 'Royal Challengers Bengaluru', 'LHB', 'Right-arm Off Spin'],
+  ['Travis Head', 'Sunrisers Hyderabad', 'LHB', 'Right-arm Off Spin'],
+  ['Aniket Verma', 'Sunrisers Hyderabad', 'RHB', '—'],
+  ['Smaran Ravichandran', 'Sunrisers Hyderabad', 'LHB', '—'],
+];
+
+function buildBatsman(index: number, [name, franchise, battingStyle, bowlingStyle]: [string, string, string, string]): Player {
+  const category = getCategory(name);
+  const stats = getStats(category, 'batsman');
+  const nationality = OVERSEAS.has(name) ? 'overseas' as const : 'indian' as const;
+  const rating = RATING_OVERRIDES[name] ?? stats.rating;
+  return {
+    id: `p${index + 1}`,
+    name, franchise,
+    role: 'batsman',
+    subRole: bowlingStyle !== '—' ? `Part-time ${bowlingStyle}` : 'Batsman',
+    category, nationality,
+    basePrice: stats.basePrice,
+    batting: stats.batting,
+    bowling: stats.bowling,
+    fielding: stats.fielding,
+    rating,
+    battingStyle,
+    bowlingStyle,
+    photo: IMAGE_URLS[name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${ROLE_COLORS['batsman']}&color=fff&size=128&bold=true`,
+    status: 'available',
+    soldToTeamId: null,
+    soldPrice: null,
+    previousTeamId: null,
+  };
+}
+
 // ─── Combine all players ───────────────────────────────────────────────────────
-// p1–p75:   Bowlers (Sheet 2)
-// p76–p150: All-rounders (Sheet 3)
+// p1–p75:    Bowlers     (Sheet 2)
+// p76–p150:  All-rounders (Sheet 3)
 // p151–p182: Wicket-keepers (Sheet 4)
+// p183–p228: Batsmen    (Sheet 1)
 
 const bowlers = BOWLER_DATA.map((data, i) => buildBowler(i, data));
 const allrounders = ALLROUNDER_DATA.map((data, i) => buildAllrounder(75 + i, data));
 const wicketKeepers = WK_DATA.map((data, i) => buildWicketKeeper(150 + i, data));
+const batsmen = BATSMAN_DATA.map((data, i) => buildBatsman(182 + i, data));
 
-export const initialPlayers: Player[] = [...bowlers, ...allrounders, ...wicketKeepers];
+export const initialPlayers: Player[] = [...bowlers, ...allrounders, ...wicketKeepers, ...batsmen];
 
 // Helper to get initials avatar URL (used as fallback)
 export function getInitialsAvatar(name: string, role: PlayerRole): string {

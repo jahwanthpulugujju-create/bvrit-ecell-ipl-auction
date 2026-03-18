@@ -185,7 +185,7 @@ export default function Landing() {
           <div className="glass-card p-8 md:p-12 max-w-4xl mx-auto">
             <h2 className="section-title mb-6">About <span className="text-accent-orange">BVRIT E-Cell</span></h2>
             <p className="text-muted-foreground leading-relaxed mb-4">
-              BVRIT Hyderabad College of Engineering for Women, Narsapur, Medak District, Telangana — 502313.
+              B. V. Raju Institute of Technology, Narsapur, Medak District, Telangana.
               The Entrepreneurship Cell (E-Cell) fosters innovation and entrepreneurial spirit among students through events, workshops, and initiatives like the E-Summit.
             </p>
             <p className="text-muted-foreground leading-relaxed">

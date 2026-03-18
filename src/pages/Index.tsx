@@ -1,29 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useInView } from 'framer-motion';
-import { useAuction } from '@/context/AuctionContext';
 import { ChevronRight, Users, Zap, Trophy, Calendar } from 'lucide-react';
-
-function AnimatedCounter({ target, suffix = '' }: { target: number; suffix?: string }) {
-  const [val, setVal] = useState(0);
-  const ref = useRef<HTMLDivElement>(null);
-  const inView = useInView(ref, { once: true });
-
-  useEffect(() => {
-    if (!inView) return;
-    let start = 0;
-    const duration = 1500;
-    const step = (ts: number) => {
-      if (!start) start = ts;
-      const progress = Math.min((ts - start) / duration, 1);
-      setVal(Math.floor(progress * target));
-      if (progress < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [inView, target]);
-
-  return <div ref={ref} className="font-mono text-4xl md:text-5xl font-bold text-accent-cyan text-glow-cyan">{val}{suffix}</div>;
-}
 
 function FloatingOrb({ delay, x, y, size, color }: { delay: number; x: string; y: string; size: number; color: string }) {
   return (
@@ -41,8 +19,6 @@ function FloatingOrb({ delay, x, y, size, color }: { delay: number; x: string; y
 }
 
 export default function Landing() {
-  const { state } = useAuction();
-
   const steps = [
     { icon: '🔒', title: 'RETENTION', desc: 'Teams retain key players from previous seasons' },
     { icon: '🎙️', title: 'AUCTION BEGINS', desc: 'Players enter the pool, bidding starts' },
@@ -54,6 +30,15 @@ export default function Landing() {
     { icon: <Zap className="w-8 h-8 text-accent-cyan" />, title: 'Auctioneer Panel', desc: 'Full control of the auction flow with real-time bid registration', link: '/admin' },
     { icon: <Users className="w-8 h-8 text-accent-orange" />, title: 'Team Dashboards', desc: 'Live squad updates, purse tracking, and RTM controls', link: '/teams' },
     { icon: <Trophy className="w-8 h-8 text-accent-gold" />, title: 'Projector Display', desc: 'Full-screen auction display for the stadium audience', link: '/display' },
+  ];
+
+  const timeline = [
+    { label: 'Retention Window Opens', date: 'TBA' },
+    { label: 'Player Pool Released', date: 'TBA' },
+    { label: 'Strategy Session', date: 'TBA' },
+    { label: 'Live Auction Day 1', date: '25 Mar 2026' },
+    { label: 'Live Auction Day 2', date: '26 Mar 2026' },
+    { label: 'Awards & Results', date: '26 Mar 2026' },
   ];
 
   return (
@@ -72,7 +57,7 @@ export default function Landing() {
           >
             <div className="inline-flex items-center gap-2 bg-accent-orange/10 border border-accent-orange/30 rounded-full px-4 py-1.5 mb-8">
               <span className="w-2 h-2 rounded-full bg-accent-orange animate-pulse" />
-              <span className="font-rajdhani font-semibold text-accent-orange text-sm tracking-wider">E-SUMMIT 2026</span>
+              <span className="font-rajdhani font-semibold text-accent-orange text-sm tracking-wider">E-SUMMIT 2026 • 25–26 MARCH</span>
             </div>
           </motion.div>
 
@@ -99,43 +84,17 @@ export default function Landing() {
           </motion.p>
 
           <motion.div
-            className="flex flex-col sm:flex-row gap-4 justify-center mb-16"
+            className="flex flex-col sm:flex-row gap-4 justify-center"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7 }}
           >
-            <Link to="/teams" className="btn-secondary glow-orange flex items-center gap-2 justify-center">
-              View Teams <ChevronRight size={18} />
+            <Link to="/players" className="btn-secondary glow-orange flex items-center gap-2 justify-center">
+              View Players <ChevronRight size={18} />
             </Link>
-            <Link to="/players" className="btn-ghost flex items-center gap-2 justify-center">
-              View Players
+            <Link to="/display" className="btn-ghost flex items-center gap-2 justify-center">
+              📺 Open Display
             </Link>
-          </motion.div>
-
-          {/* Stats */}
-          <motion.div
-            className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-          >
-            {[
-              { label: 'Teams', value: 8 },
-              { label: 'Players', value: 250 },
-              { label: 'Total Purse', value: 960, suffix: ' Cr' },
-              { label: 'April 5, 2026', value: 0, isDate: true },
-            ].map((s, i) => (
-              <div key={i} className="glass-card p-6 text-center">
-                {s.isDate ? (
-                  <div className="font-mono text-4xl md:text-5xl font-bold text-accent-orange text-glow-orange flex items-center justify-center gap-2">
-                    <Calendar className="w-8 h-8" />
-                  </div>
-                ) : (
-                  <AnimatedCounter target={s.value} suffix={s.suffix} />
-                )}
-                <div className="font-rajdhani text-sm text-muted-foreground mt-2 tracking-wider">{s.label}</div>
-              </div>
-            ))}
           </motion.div>
         </div>
       </section>
@@ -194,6 +153,32 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Event Timeline */}
+      <section className="py-24 relative">
+        <div className="container mx-auto px-4 max-w-2xl">
+          <h2 className="section-title text-center mb-16">Event <span className="text-accent-cyan">Timeline</span></h2>
+          <div className="relative">
+            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-accent-cyan/20" />
+            {timeline.map((item, i) => (
+              <motion.div
+                key={i}
+                className="relative pl-12 pb-8 last:pb-0"
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+              >
+                <div className="absolute left-2.5 top-1 w-3 h-3 rounded-full bg-accent-cyan border-2 border-background" />
+                <div className="glass-card p-4">
+                  <h4 className="font-exo font-semibold text-foreground text-sm">{item.label}</h4>
+                  <p className="font-mono text-xs text-accent-cyan mt-1">{item.date}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* About */}
       <section className="py-24 relative">
         <div className="container mx-auto px-4">
@@ -219,7 +204,7 @@ export default function Landing() {
       <footer className="border-t border-border py-8">
         <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <span className="font-orbitron text-xs">BVRIT <span className="text-accent-orange">E-CELL</span></span>
-          <span>© 2026 BVRIT E-Cell | Virtual currency only. No real monetary value.</span>
+          <span>© 2026 BVRIT E-Cell | E-Summit 2026 | Virtual currency only. No real monetary value.</span>
           <span>@ecellbvrit</span>
         </div>
       </footer>

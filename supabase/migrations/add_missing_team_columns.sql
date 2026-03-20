@@ -1,5 +1,12 @@
--- Fix: Add missing columns to teams table
+-- Fix: Reconcile teams table schema with app expectations
 -- Run this in Supabase Dashboard > SQL Editor
+
+-- Fix old columns that have NOT NULL constraints the app doesn't satisfy
+ALTER TABLE public.teams ALTER COLUMN short_name SET DEFAULT '';
+ALTER TABLE public.teams ALTER COLUMN short_name DROP NOT NULL;
+
+-- Make logo nullable if it exists (app doesn't send it)
+ALTER TABLE public.teams ALTER COLUMN logo DROP NOT NULL;
 
 -- Add city column if missing
 ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS city TEXT NOT NULL DEFAULT '';
@@ -22,7 +29,7 @@ ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME
 -- Add is_active column if missing
 ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
--- Add password_hash column if missing
+-- Add password_hash column if missing (old schema may have it already)
 ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS password_hash TEXT NOT NULL DEFAULT '';
 
 -- Add color column if missing

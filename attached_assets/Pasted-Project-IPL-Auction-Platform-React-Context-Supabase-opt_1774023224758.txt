@@ -1,0 +1,287 @@
+Project: IPL Auction Platform (React + Context/Supabase optional)
+
+Goal:
+Harden privacy, enforce strict role-based access, simplify UI, enforce correct auction flow, and remove all strategic data leakage.
+
+IMPORTANT:
+- Do NOT redesign the whole app
+- Only modify existing components
+- Maintain current architecture
+- Focus on access control + UI cleanup + auction correctness
+
+--------------------------------------------------
+1. ROLE-BASED ACCESS CONTROL (CRITICAL)
+--------------------------------------------------
+
+Define 3 roles:
+- admin
+- team_user
+- public_viewer
+
+Create a global auth state:
+auth = {
+  role: "admin" | "team_user" | "public",
+  teamSlug?: string
+}
+
+Rules:
+- Admin → full access
+- Team → only own team
+- Public → only display page
+
+--------------------------------------------------
+2. TEAM AUTHENTICATION SYSTEM
+--------------------------------------------------
+
+2.1 Team Login Flow:
+- Route: /team-login
+- Inputs:
+  - team name (slug)
+  - password
+
+2.2 On success:
+- Store in sessionStorage:
+  {
+    role: "team_user",
+    teamSlug: "<team_slug>"
+  }
+
+2.3 Protect routes:
+- /team/:slug
+  IF not logged in → redirect to /team-login
+  IF slug !== session.teamSlug → show "Access Denied"
+
+2.4 Remove all open access to team dashboards
+
+--------------------------------------------------
+3. REMOVE TEAM DATA LEAKAGE
+--------------------------------------------------
+
+3.1 Teams Page (/teams):
+- Show ONLY:
+  - team name
+  - locked icon
+
+REMOVE:
+- purse
+- player count
+- squad details
+- stats
+
+3.2 Clicking team:
+- Must open login modal BEFORE loading data
+
+3.3 After login:
+- Show ONLY that team’s data
+
+--------------------------------------------------
+4. HIDE PLAYER POOL FROM TEAMS
+--------------------------------------------------
+
+4.1 Players Page:
+- Admin only
+
+IF role !== admin:
+  → redirect OR show "Restricted Access"
+
+4.2 Remove:
+- player browsing
+- filters
+- search for teams
+
+4.3 Teams should ONLY see:
+- current live auction player
+
+--------------------------------------------------
+5. REMOVE UPCOMING PLAYERS (CRITICAL)
+--------------------------------------------------
+
+5.1 Remove upcoming players from:
+- display page
+- team dashboard
+- public UI
+
+5.2 Keep upcoming players ONLY in admin panel
+
+--------------------------------------------------
+6. DISPLAY PAGE CLEANUP (/display)
+--------------------------------------------------
+
+DISPLAY SHOULD ONLY SHOW:
+
+- Current player
+- Current bid
+- Timer
+- Player stats
+- Sold / Unsold
+- Auction ticker
+
+REMOVE:
+- leaderboard
+- team purse
+- upcoming players
+- team list
+
+--------------------------------------------------
+7. REMOVE PLAYER PHOTOS (ADMIN CONTROL)
+--------------------------------------------------
+
+7.1 In Admin auction control:
+REMOVE:
+- player image
+
+KEEP:
+- name
+- role
+- stats
+
+7.2 Optional:
+Use initials instead of image
+
+--------------------------------------------------
+8. SIMPLIFY AUCTION CONTROLS
+--------------------------------------------------
+
+REMOVE:
+- multiple small bid buttons (3, 3, 3)
+
+KEEP:
+- minimal clean interface
+
+Example:
+- single "Place Bid" or controlled increment
+
+--------------------------------------------------
+9. PAUSE SYSTEM (FIX COMPLETELY)
+--------------------------------------------------
+
+9.1 In AuctionContext:
+
+Add:
+isPaused: boolean
+
+9.2 Behavior:
+IF isPaused:
+  - block all bids
+  - freeze timer
+  - show "Paused"
+
+9.3 On resume:
+- continue from same timer
+
+9.4 Ensure:
+- pause persists across re-render
+
+--------------------------------------------------
+10. BLOCK BIDDING WHEN PAUSED
+--------------------------------------------------
+
+In bid function:
+
+IF isPaused:
+  return error "Auction Paused"
+
+Disable UI buttons:
+disabled={isPaused}
+
+--------------------------------------------------
+11. PLAYER ORDER (VERY IMPORTANT)
+--------------------------------------------------
+
+Use EXACT order from CSV/Excel:
+
+ORDER:
+1. Batsmen
+2. Bowlers
+3. All-rounders
+4. Wicketkeepers
+
+Implementation:
+
+- Do NOT sort dynamically
+- Preserve import order
+- Use array index as source of truth
+
+auctionQueue = players (in exact order)
+
+--------------------------------------------------
+12. ADMIN-ONLY QUEUE VISIBILITY
+--------------------------------------------------
+
+Admin panel:
+- show full queue
+
+Public:
+- show ONLY current player
+
+--------------------------------------------------
+13. ROUTE PROTECTION
+--------------------------------------------------
+
+/admin → admin only  
+/team → team login required  
+/players → admin only  
+/display → public safe view  
+
+--------------------------------------------------
+14. REMOVE HOMEPAGE LEAKAGE
+--------------------------------------------------
+
+REMOVE:
+- total teams
+- total purse
+
+REPLACE WITH:
+"Configured by admin"
+
+--------------------------------------------------
+15. CLEAN UI TEXT
+--------------------------------------------------
+
+Replace:
+- "Total purse"
+- "Remaining budget"
+- "Upcoming players"
+
+With:
+- neutral / hidden labels
+
+--------------------------------------------------
+16. DATA SECURITY (IMPORTANT)
+--------------------------------------------------
+
+DO NOT:
+- send full player list to client for team/public
+- store sensitive data openly in localStorage
+
+IF using API:
+- filter server-side
+
+--------------------------------------------------
+17. ACCEPTANCE CRITERIA
+--------------------------------------------------
+
+✔ No team can see another team  
+✔ No one sees full player pool  
+✔ No upcoming players visible publicly  
+✔ Display shows only current auction info  
+✔ Admin has full control  
+✔ Pause works correctly  
+✔ Auction order follows Excel exactly  
+✔ UI is clean and minimal  
+
+--------------------------------------------------
+18. FINAL DELIVERABLES
+--------------------------------------------------
+
+- secured team login
+- restricted players page
+- clean display page
+- fixed admin panel
+- working pause system
+- correct auction queue
+- zero data leakage
+
+--------------------------------------------------
+END OF IMPLEMENTATION
+--------------------------------------------------

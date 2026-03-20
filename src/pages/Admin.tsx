@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useAuction, formatPrice, TeamDB, TeamPlayerFreeze } from '@/context/AuctionContext';
+import { useAuction, formatPrice, TeamDB } from '@/context/AuctionContext';
 import AuctionTimer, { TimerBar } from '@/components/AuctionTimer';
 import ConnectionStatus from '@/components/ConnectionStatus';
 import { roleEmojis, Player } from '@/data/players';
 import { createTeamSlug, generateTeamPassword, hashTeamPassword, MIN_ROLE_REQUIREMENTS } from '@/data/teams';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
-import { playFreezeRejected, toggleMute, getMuted } from '@/lib/sounds';
+import { toggleMute, getMuted } from '@/lib/sounds';
 import {
   Search, Play, Pause, RotateCcw, Hammer, X, Users, BarChart3, Eye, Plus,
   Download, Trash2, Edit2, Megaphone, DollarSign, EyeOff, Volume2, VolumeX,
@@ -103,84 +103,23 @@ function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): nu
   return seconds;
 }
 
-function FreezeRingSvg({ freeze, localFreezeMs }: { freeze: TeamPlayerFreeze; localFreezeMs: number }) {
-  const totalMs = freeze.freeze_seconds * 1000;
-  const pct = totalMs > 0 ? Math.max(0, localFreezeMs / totalMs) * 100 : 0;
-  const dashOffset = 100 - pct;
-  return (
-    <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-10 rounded-lg">
-      <svg viewBox="0 0 36 36" className="w-12 h-12 absolute" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(245,158,11,0.2)" strokeWidth="3" />
-        <circle cx="18" cy="18" r="15.9" fill="none" stroke="hsl(51 100% 50%)"
-          strokeWidth="3" strokeDasharray="100" strokeDashoffset={dashOffset} strokeLinecap="round"
-          style={{ filter: 'drop-shadow(0 0 4px hsl(51 100% 50%))', transition: 'stroke-dashoffset 100ms linear' }}
-        />
-      </svg>
-      <span className="relative font-mono text-[11px] text-accent-gold font-bold">
-        🔒 {Math.ceil(localFreezeMs / 1000)}s
-      </span>
-    </div>
-  );
-}
-
 function TeamBidButton({ team }: { team: TeamDB }) {
-  const { auctionState, freezes, globalCooldowns, registerBid, players } = useAuction();
+  const { auctionState, registerBid, players } = useAuction();
   const { toast } = useToast();
-  const [localFreezeMs, setLocalFreezeMs] = useState(0);
-  const [globalMs, setGlobalMs] = useState(0);
   const [showQuickView, setShowQuickView] = useState(false);
-  const [justExpired, setJustExpired] = useState(false);
 
-  const currentPlayerId = auctionState?.current_player_id;
-
-  useEffect(() => {
-    if (!currentPlayerId) { setLocalFreezeMs(0); return; }
-    const freeze = freezes.find(f => f.team_id === team.id && f.player_id === currentPlayerId && f.freeze_expires_at > Date.now());
-    if (!freeze) { setLocalFreezeMs(0); return; }
-    const tick = setInterval(() => {
-      const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
-      setLocalFreezeMs(rem);
-      if (rem <= 0) {
-        clearInterval(tick);
-        setJustExpired(true);
-        setTimeout(() => setJustExpired(false), 300);
-      }
-    }, 100);
-    return () => clearInterval(tick);
-  }, [freezes, team.id, currentPlayerId]);
-
-  useEffect(() => {
-    const gc = globalCooldowns[team.id];
-    if (!gc || gc.global_expires_at <= Date.now()) { setGlobalMs(0); return; }
-    const tick = setInterval(() => {
-      const rem = Math.max(0, gc.global_expires_at - Date.now());
-      setGlobalMs(rem);
-      if (rem <= 0) clearInterval(tick);
-    }, 100);
-    return () => clearInterval(tick);
-  }, [globalCooldowns, team.id]);
-
-  const isFrozen = localFreezeMs > 0;
-  const isGlobal = globalMs > 0;
   const isLeading = team.id === auctionState?.leading_team_id;
   const isPaused = auctionState?.status === 'live' && !auctionState?.timer_running && !!auctionState?.current_player_id;
   const canAfford = auctionState
     ? team.purse >= (auctionState.leading_team_id ? auctionState.current_bid_amount + auctionState.bid_increment : auctionState.current_bid_amount)
     : false;
 
-  const currentFreeze = freezes.find(f => f.team_id === team.id && f.player_id === currentPlayerId);
-
   async function handleClick() {
-    if (isFrozen || isGlobal || isLeading || !canAfford || isPaused) return;
+    if (isLeading || !canAfford || isPaused) return;
     const result = await registerBid(team.id);
     if (!result.success) {
       if (result.reason === 'AUCTION_PAUSED') {
         toast({ title: '⏸ Auction is paused — resume before bidding', variant: 'destructive' });
-      } else if (result.reason === 'PLAYER_COOLDOWN') {
-        toast({ title: `⏳ ${team.name} frozen — ${result.remainingSeconds}s remaining`, variant: 'destructive' });
-        playFreezeRejected();
-      } else if (result.reason === 'GLOBAL_COOLDOWN') {
-        toast({ title: `⚡ Throttle — wait ${result.remainingSeconds}s`, variant: 'destructive' });
       } else if (result.reason === 'INSUFFICIENT_PURSE') {
         toast({ title: `Insufficient purse — ${formatPrice(result.purseRemaining)} remaining`, variant: 'destructive' });
       } else if (result.reason === 'NO_CURRENT_PLAYER') {
@@ -196,19 +135,16 @@ function TeamBidButton({ team }: { team: TeamDB }) {
       <button
         onClick={handleClick}
         onContextMenu={e => { e.preventDefault(); setShowQuickView(v => !v); }}
-        disabled={(!canAfford && !isFrozen) || isPaused}
-        title={isPaused ? 'Auction paused' : isFrozen ? `Frozen: ${Math.ceil(localFreezeMs / 1000)}s` : isLeading ? 'Leading' : 'Right-click for quick view'}
+        disabled={!canAfford || isPaused}
+        title={isPaused ? 'Auction paused' : isLeading ? 'Leading' : 'Right-click for quick view'}
         className={`relative p-3 rounded-lg text-sm font-semibold transition-all border-2 overflow-hidden ${
           isPaused ? 'border-accent-gold/40 bg-accent-gold/5 text-muted-foreground opacity-60 cursor-not-allowed' :
           isLeading ? 'border-accent-emerald bg-accent-emerald/10 text-accent-emerald' :
-          isFrozen ? 'border-accent-gold/70 bg-accent-gold/10 cursor-not-allowed' :
-          justExpired ? 'border-accent-emerald bg-accent-emerald/15' :
           canAfford ? 'border-border bg-card text-foreground hover:border-accent-cyan/50 hover:-translate-y-0.5 cursor-pointer' :
           'border-border bg-card/50 text-muted-foreground opacity-50 cursor-not-allowed'
         }`}
-        style={canAfford && !isLeading && !isFrozen && !isPaused ? { borderColor: team.color + '60' } : {}}
+        style={canAfford && !isLeading && !isPaused ? { borderColor: team.color + '60' } : {}}
       >
-        {isFrozen && currentFreeze && <FreezeRingSvg freeze={currentFreeze} localFreezeMs={localFreezeMs} />}
         <div className="h-1 w-full rounded mb-2 -mx-0 absolute top-0 left-0 right-0" style={{ background: team.color }} />
         <div className="pt-1">
           <div className="truncate font-exo">{team.name}</div>
@@ -222,20 +158,8 @@ function TeamBidButton({ team }: { team: TeamDB }) {
 }
 
 function TeamQuickView({ team, onClose }: { team: TeamDB; onClose: () => void }) {
-  const { players, freezes, auctionState, clearTeamFreeze } = useAuction();
+  const { players } = useAuction();
   const squadPlayers = players.filter(p => p.soldToTeamId === team.id);
-  const currentFreeze = freezes.find(f =>
-    f.team_id === team.id &&
-    f.player_id === auctionState?.current_player_id &&
-    f.freeze_expires_at > Date.now()
-  );
-  const [freezeMs, setFreezeMs] = useState(currentFreeze ? Math.max(0, currentFreeze.freeze_expires_at - Date.now()) : 0);
-
-  useEffect(() => {
-    if (!currentFreeze) return;
-    const iv = setInterval(() => setFreezeMs(Math.max(0, currentFreeze.freeze_expires_at - Date.now())), 200);
-    return () => clearInterval(iv);
-  }, [currentFreeze]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -259,16 +183,6 @@ function TeamQuickView({ team, onClose }: { team: TeamDB; onClose: () => void })
               <div className="font-mono text-accent-purple font-bold">{team.rtm_remaining}</div>
             </div>
           </div>
-
-          {currentFreeze && freezeMs > 0 && (
-            <div className="bg-accent-gold/10 border border-accent-gold/30 rounded-lg p-3 flex items-center justify-between">
-              <span className="text-xs text-accent-gold">🔒 Frozen: {Math.ceil(freezeMs / 1000)}s</span>
-              <button
-                onClick={async () => { if (confirm(`Clear freeze for ${team.name}?`)) await clearTeamFreeze(team.id, auctionState!.current_player_id!); }}
-                className="text-xs bg-accent-gold/20 hover:bg-accent-gold/30 text-accent-gold px-2 py-1 rounded transition-colors"
-              >🔓 Clear</button>
-            </div>
-          )}
 
           <div>
             <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-2">ROLE COMPOSITION</div>
@@ -305,7 +219,7 @@ function TeamQuickView({ team, onClose }: { team: TeamDB; onClose: () => void })
 
 function AuctionControl() {
   const {
-    auctionState, players, teams, freezes,
+    auctionState, players, teams,
     setCurrentPlayer, confirmSale, markUnsold,
     startTimer, pauseTimer, resetTimer,
     setStatus, setBidIncrement,
@@ -959,11 +873,10 @@ function TeamManagement() {
 }
 
 function LiveMonitor() {
-  const { teams, players, auctionState, freezes, connected } = useAuction();
+  const { teams, players, auctionState, connected } = useAuction();
   const currentPlayer = auctionState?.current_player_id ? players.find(p => p.id === auctionState.current_player_id) : null;
   const soldCount = players.filter(p => p.status === 'sold').length;
   const unsoldCount = players.filter(p => p.status === 'unsold').length;
-  const now = Date.now();
 
   return (
     <div className="space-y-6">
@@ -1008,13 +921,11 @@ function LiveMonitor() {
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
         {teams.map(team => {
           const squad = players.filter(p => p.soldToTeamId === team.id);
-          const freeze = freezes.find(f => f.team_id === team.id && f.player_id === auctionState?.current_player_id && f.freeze_expires_at > now);
           const pursePct = team.initial_purse > 0 ? (team.purse / team.initial_purse) * 100 : 0;
           return (
             <div key={team.id} className="glass-card p-4" style={{ borderTopColor: team.color, borderTopWidth: 2 }}>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-exo font-semibold text-foreground">{team.name}</span>
-                {freeze && <span className="text-xs text-accent-gold">🔒 {Math.ceil((freeze.freeze_expires_at - now) / 1000)}s</span>}
               </div>
               <div className="font-mono text-lg text-accent-cyan mb-2">{formatPrice(team.purse)}</div>
               <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden mb-2">

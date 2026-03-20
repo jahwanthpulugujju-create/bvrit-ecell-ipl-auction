@@ -71,72 +71,6 @@ function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): nu
   return seconds;
 }
 
-function FreezeBanner({ teamId }: { teamId: string }) {
-  const { freezes, auctionState } = useAuction();
-  const currentPlayerId = auctionState?.current_player_id;
-  const freeze = freezes.find(f =>
-    f.team_id === teamId &&
-    f.player_id === currentPlayerId &&
-    f.freeze_expires_at > Date.now()
-  );
-  const [remainingMs, setRemainingMs] = useState(0);
-  const [justExpired, setJustExpired] = useState(false);
-
-  useEffect(() => {
-    if (!freeze) { setRemainingMs(0); return; }
-    const tick = () => {
-      const rem = Math.max(0, freeze.freeze_expires_at - Date.now());
-      setRemainingMs(rem);
-      if (rem === 0) setJustExpired(true);
-    };
-    tick();
-    const iv = setInterval(tick, 100);
-    return () => clearInterval(iv);
-  }, [freeze]);
-
-  useEffect(() => {
-    if (justExpired) {
-      const t = setTimeout(() => setJustExpired(false), 600);
-      return () => clearTimeout(t);
-    }
-  }, [justExpired]);
-
-  if (!freeze && !justExpired) return null;
-
-  const totalMs = (freeze?.freeze_seconds ?? 0) * 1000;
-  const pct = totalMs > 0 ? Math.max(0, remainingMs / totalMs) * 100 : 0;
-  const dashOffset = 100 - pct;
-  const secs = Math.ceil(remainingMs / 1000);
-
-  if (justExpired && remainingMs === 0) {
-    return (
-      <div className="fixed top-0 left-0 right-0 z-30 bg-accent-emerald/90 text-background text-center py-3 font-rajdhani font-bold tracking-wider text-sm animate-pulse">
-        ✅ FREEZE LIFTED — YOU CAN BID NOW
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed top-0 left-0 right-0 z-30 bg-accent-gold/20 border-b border-accent-gold/50 backdrop-blur-md">
-      <div className="container mx-auto px-4 py-3 flex items-center gap-4">
-        <div className="relative flex-shrink-0">
-          <svg viewBox="0 0 36 36" className="w-14 h-14" style={{ transform: 'rotate(-90deg)' }}>
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(245,158,11,0.2)" strokeWidth="3" />
-            <circle cx="18" cy="18" r="15.9" fill="none" stroke="hsl(51 100% 50%)"
-              strokeWidth="3" strokeDasharray="100" strokeDashoffset={dashOffset} strokeLinecap="round"
-              style={{ filter: 'drop-shadow(0 0 4px hsl(51 100% 50%))', transition: 'stroke-dashoffset 100ms linear' }}
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center font-mono text-xs font-bold text-accent-gold">{secs}s</div>
-        </div>
-        <div>
-          <div className="font-rajdhani font-bold text-accent-gold tracking-wider">🔒 BID COOLDOWN ACTIVE</div>
-          <div className="text-xs text-muted-foreground">Your team cannot bid for {secs} more second{secs !== 1 ? 's' : ''}.</div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function CountdownTimer({ expiresAt, onExpire }: { expiresAt: number | null; onExpire: () => void }) {
   const [seconds, setSeconds] = useState(0);
@@ -258,7 +192,7 @@ function AnnouncementBanner() {
 export function TeamDashboard() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { auctionState, players, teams, freezes, rtmState, getTeamBySlug, getPlayer, useRtm, declineRtm } = useAuction();
+  const { auctionState, players, teams, rtmState, getTeamBySlug, getPlayer, useRtm, declineRtm } = useAuction();
   const { toast } = useToast();
 
   const team = slug ? getTeamBySlug(slug) : null;
@@ -331,7 +265,6 @@ export function TeamDashboard() {
 
   return (
     <div className="min-h-screen bg-background pt-16 pb-12">
-      {team && <FreezeBanner teamId={team.id} />}
       <AnnouncementBanner />
 
       {/* RTM Overlay */}

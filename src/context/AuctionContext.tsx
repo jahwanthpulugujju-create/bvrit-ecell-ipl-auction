@@ -35,21 +35,6 @@ export interface AuctionStateDB {
   auction_queue: string[];
 }
 
-export interface TeamPlayerFreeze {
-  id: string;
-  team_id: string;
-  player_id: string;
-  freeze_expires_at: number;
-  freeze_seconds: number;
-  bid_amount: number;
-}
-
-export interface TeamGlobalCooldown {
-  team_id: string;
-  global_expires_at: number;
-  last_bid_at: number;
-}
-
 export interface RtmState {
   id: number;
   active: boolean;
@@ -59,30 +44,16 @@ export interface RtmState {
   timer_expires_at: number | null;
 }
 
-export interface FreezeConfig {
-  min_freeze_seconds: number;
-  base_freeze_seconds: number;
-  increment_unit_lakhs: number;
-  increment_seconds: number;
-  max_freeze_seconds: number;
-  global_cooldown_seconds: number;
-}
-
 export type BidResult =
-  | { success: true; freezeSeconds: number }
+  | { success: true }
   | { success: false; reason: 'NO_CURRENT_PLAYER' | 'SUPABASE_ERROR' | 'AUCTION_PAUSED' }
-  | { success: false; reason: 'PLAYER_COOLDOWN'; remainingSeconds: number }
-  | { success: false; reason: 'GLOBAL_COOLDOWN'; remainingSeconds: number }
   | { success: false; reason: 'INSUFFICIENT_PURSE'; purseRemaining: number };
 
 interface AuctionContextValue {
   auctionState: AuctionStateDB | null;
   players: Player[];
   teams: TeamDB[];
-  freezes: TeamPlayerFreeze[];
-  globalCooldowns: Record<string, TeamGlobalCooldown>;
   rtmState: RtmState | null;
-  freezeConfig: FreezeConfig;
   connected: boolean;
 
   registerBid: (teamId: string) => Promise<BidResult>;
@@ -96,8 +67,6 @@ interface AuctionContextValue {
   setStatus: (status: string) => Promise<void>;
   setPhase: (phase: string) => Promise<void>;
   setBidIncrement: (increment: number) => Promise<void>;
-  clearTeamFreeze: (teamId: string, playerId: string) => Promise<void>;
-  clearAllFreezesForPlayer: (playerId: string) => Promise<void>;
 
   useRtm: (teamId: string) => Promise<void>;
   declineRtm: () => Promise<void>;
@@ -105,18 +74,7 @@ interface AuctionContextValue {
   getPlayer: (id: string) => Player | undefined;
   getTeam: (id: string) => TeamDB | undefined;
   getTeamBySlug: (slug: string) => TeamDB | undefined;
-  computeFreezeSecs: (bidAmountLakhs: number) => number;
-  getTeamFreezeForCurrentPlayer: (teamId: string) => TeamPlayerFreeze | null;
 }
-
-const DEFAULT_FREEZE_CONFIG: FreezeConfig = {
-  min_freeze_seconds: 3,
-  base_freeze_seconds: 3,
-  increment_unit_lakhs: 20,
-  increment_seconds: 2,
-  max_freeze_seconds: 30,
-  global_cooldown_seconds: 1,
-};
 
 const AuctionContext = createContext<AuctionContextValue | null>(null);
 
@@ -157,10 +115,7 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   const [auctionState, setAuctionState] = useState<AuctionStateDB | null>(null);
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
   const [teams, setTeams] = useState<TeamDB[]>([]);
-  const [freezes, setFreezes] = useState<TeamPlayerFreeze[]>([]);
-  const [globalCooldowns, setGlobalCooldowns] = useState<Record<string, TeamGlobalCooldown>>({});
   const [rtmState, setRtmState] = useState<RtmState | null>(null);
-  const [freezeConfig, setFreezeConfig] = useState<FreezeConfig>(DEFAULT_FREEZE_CONFIG);
   const [connected, setConnected] = useState(false);
 
   const squadRef = useRef<{ player_id: string; team_id: string; purchase_price: number }[]>([]);
@@ -185,19 +140,13 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       const [
         { data: aState },
         { data: teamsData },
-        { data: freezesData },
-        { data: cooldownsData },
         { data: rtmData },
-        { data: configData },
         { data: squadData },
         { data: unsoldLogs },
       ] = await Promise.all([
         supabase.from('auction_state').select('*').limit(1).maybeSingle(),
         supabase.from('teams').select('*').eq('is_active', true).order('name'),
-        supabase.from('team_player_freezes').select('*'),
-        supabase.from('team_global_cooldowns').select('*'),
         supabase.from('rtm_state').select('*').limit(1).maybeSingle(),
-        supabase.from('auction_config').select('*').limit(1).maybeSingle(),
         supabase.from('team_squads').select('player_id, team_id, purchase_price'),
         supabase.from('auction_log').select('player_id').eq('type', 'unsold'),
       ]);
@@ -206,23 +155,7 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
 
       if (aState) setAuctionState(aState as AuctionStateDB);
       if (teamsData) setTeams(teamsData as TeamDB[]);
-      if (freezesData) setFreezes(freezesData as TeamPlayerFreeze[]);
-      if (cooldownsData) {
-        const map: Record<string, TeamGlobalCooldown> = {};
-        (cooldownsData as TeamGlobalCooldown[]).forEach(c => { map[c.team_id] = c; });
-        setGlobalCooldowns(map);
-      }
       if (rtmData) setRtmState(rtmData as RtmState);
-      if (configData) {
-        setFreezeConfig({
-          min_freeze_seconds: (configData as any).freeze_min_seconds ?? DEFAULT_FREEZE_CONFIG.min_freeze_seconds,
-          base_freeze_seconds: (configData as any).freeze_base_seconds ?? DEFAULT_FREEZE_CONFIG.base_freeze_seconds,
-          increment_unit_lakhs: (configData as any).freeze_increment_unit_lakhs ?? DEFAULT_FREEZE_CONFIG.increment_unit_lakhs,
-          increment_seconds: (configData as any).freeze_increment_seconds ?? DEFAULT_FREEZE_CONFIG.increment_seconds,
-          max_freeze_seconds: (configData as any).freeze_max_seconds ?? DEFAULT_FREEZE_CONFIG.max_freeze_seconds,
-          global_cooldown_seconds: (configData as any).freeze_global_cooldown_seconds ?? DEFAULT_FREEZE_CONFIG.global_cooldown_seconds,
-        });
-      }
 
       const squad = (squadData || []) as { player_id: string; team_id: string; purchase_price: number }[];
       const unsoldSet = new Set<string>(
@@ -277,27 +210,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
         })
         .subscribe(),
 
-      supabase.channel('ctx-freezes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'team_player_freezes' }, payload => {
-          if (payload.eventType === 'DELETE') {
-            setFreezes(prev => prev.filter(f => f.id !== (payload.old as any).id));
-          } else {
-            const updated = payload.new as TeamPlayerFreeze;
-            setFreezes(prev => {
-              const exists = prev.findIndex(f => f.id === updated.id);
-              return exists >= 0 ? prev.map(f => f.id === updated.id ? updated : f) : [...prev, updated];
-            });
-          }
-        })
-        .subscribe(),
-
-      supabase.channel('ctx-cooldowns')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'team_global_cooldowns' }, payload => {
-          const updated = payload.new as TeamGlobalCooldown;
-          setGlobalCooldowns(prev => ({ ...prev, [updated.team_id]: updated }));
-        })
-        .subscribe(),
-
       supabase.channel('ctx-rtm')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'rtm_state' }, payload => {
           setRtmState(payload.new as RtmState);
@@ -311,13 +223,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const computeFreezeSecs = useCallback((bidAmountLakhs: number): number => {
-    const cfg = freezeConfig;
-    const increments = Math.floor(bidAmountLakhs / cfg.increment_unit_lakhs);
-    const raw = cfg.base_freeze_seconds + increments * cfg.increment_seconds;
-    return Math.min(Math.max(cfg.min_freeze_seconds, raw), cfg.max_freeze_seconds);
-  }, [freezeConfig]);
-
   const registerBid = useCallback(async (teamId: string): Promise<BidResult> => {
     const team = teams.find(t => t.id === teamId);
     const state = auctionState;
@@ -329,20 +234,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     }
 
     const now = Date.now();
-    const freeze = freezes.find(f =>
-      f.team_id === teamId &&
-      f.player_id === state.current_player_id &&
-      f.freeze_expires_at > now
-    );
-    if (freeze) {
-      return { success: false, reason: 'PLAYER_COOLDOWN', remainingSeconds: Math.ceil((freeze.freeze_expires_at - now) / 1000) };
-    }
-
-    const gc = globalCooldowns[teamId];
-    if (gc && gc.global_expires_at > now) {
-      return { success: false, reason: 'GLOBAL_COOLDOWN', remainingSeconds: Math.ceil((gc.global_expires_at - now) / 1000) };
-    }
-
     const newBid = state.leading_team_id
       ? state.current_bid_amount + state.bid_increment
       : state.current_bid_amount;
@@ -351,29 +242,23 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       return { success: false, reason: 'INSUFFICIENT_PURSE', purseRemaining: team.purse };
     }
 
-    const freezeSecs = computeFreezeSecs(newBid);
-    const freezeExpiresAt = now + freezeSecs * 1000;
-    const globalExpiresAt = now + (freezeConfig.global_cooldown_seconds * 1000);
     const timerExpiresAt = now + (state.bid_reset_seconds * 1000);
 
-    const { error } = await supabase.rpc('register_bid', {
-      p_player_id: state.current_player_id,
-      p_team_id: teamId,
-      p_amount: newBid,
-      p_timer_expires_at: timerExpiresAt,
-      p_freeze_expires_at: freezeExpiresAt,
-      p_freeze_seconds: freezeSecs,
-      p_global_expires_at: globalExpiresAt,
-    });
+    const { error } = await supabase.from('auction_state').update({
+      current_bid_amount: newBid,
+      leading_team_id: teamId,
+      timer_expires_at: timerExpiresAt,
+      timer_running: true,
+    }).eq('id', 1);
 
     if (error) {
-      console.error('register_bid RPC error:', error);
+      console.error('registerBid error:', error);
       return { success: false, reason: 'SUPABASE_ERROR' };
     }
 
     playBidBeep();
-    return { success: true, freezeSeconds: freezeSecs };
-  }, [teams, auctionState, freezes, globalCooldowns, freezeConfig, computeFreezeSecs]);
+    return { success: true };
+  }, [teams, auctionState]);
 
   const setCurrentPlayer = useCallback(async (playerId: string) => {
     const player = initialPlayers.find(p => p.id === playerId);
@@ -388,7 +273,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
         status: 'live',
         updated_at: new Date().toISOString(),
       }).eq('id', 1),
-      supabase.from('team_player_freezes').delete().eq('player_id', playerId),
     ]);
   }, []);
 
@@ -405,7 +289,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
         { onConflict: 'team_id,player_id' }
       ),
       supabase.from('teams').update({ purse: newPurse, updated_at: new Date().toISOString() }).eq('id', state.leading_team_id),
-      supabase.from('team_player_freezes').delete().eq('player_id', state.current_player_id),
       supabase.from('auction_state').update({
         current_player_id: null,
         current_bid_amount: 0,
@@ -441,7 +324,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
         timer_expires_at: null,
         updated_at: new Date().toISOString(),
       }).eq('id', 1),
-      supabase.from('team_player_freezes').delete().eq('player_id', playerId),
       supabase.from('auction_log').insert({
         type: 'unsold',
         player_id: playerId,
@@ -505,14 +387,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     await supabase.from('auction_state').update({ bid_increment: increment, updated_at: new Date().toISOString() }).eq('id', 1);
   }, []);
 
-  const clearTeamFreeze = useCallback(async (teamId: string, playerId: string) => {
-    await supabase.from('team_player_freezes').delete().eq('team_id', teamId).eq('player_id', playerId);
-  }, []);
-
-  const clearAllFreezesForPlayer = useCallback(async (playerId: string) => {
-    await supabase.from('team_player_freezes').delete().eq('player_id', playerId);
-  }, []);
-
   const useRtm = useCallback(async (teamId: string) => {
     const state = rtmState;
     if (!state?.active || !state.eligible_team_id) return;
@@ -549,21 +423,14 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   const getPlayer = useCallback((id: string) => players.find(p => p.id === id), [players]);
   const getTeam = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getTeamBySlug = useCallback((slug: string) => teams.find(t => t.slug === slug), [teams]);
-  const getTeamFreezeForCurrentPlayer = useCallback((teamId: string): TeamPlayerFreeze | null => {
-    const playerId = auctionState?.current_player_id;
-    if (!playerId) return null;
-    const now = Date.now();
-    return freezes.find(f => f.team_id === teamId && f.player_id === playerId && f.freeze_expires_at > now) ?? null;
-  }, [freezes, auctionState]);
 
   return (
     <AuctionContext.Provider value={{
-      auctionState, players, teams, freezes, globalCooldowns, rtmState, freezeConfig, connected,
+      auctionState, players, teams, rtmState, connected,
       registerBid, setCurrentPlayer, confirmSale, markUnsold, reIntroducePlayer,
       startTimer, pauseTimer, resetTimer, setStatus, setPhase, setBidIncrement,
-      clearTeamFreeze, clearAllFreezesForPlayer,
       useRtm, declineRtm,
-      getPlayer, getTeam, getTeamBySlug, computeFreezeSecs, getTeamFreezeForCurrentPlayer,
+      getPlayer, getTeam, getTeamBySlug,
     }}>
       {children}
     </AuctionContext.Provider>

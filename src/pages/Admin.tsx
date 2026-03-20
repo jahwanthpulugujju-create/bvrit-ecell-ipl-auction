@@ -283,7 +283,7 @@ function AuctionControl() {
           {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
         </button>
         <div className="ml-auto flex gap-2">
-          {(['pre', 'live', 'complete'] as const).map(s => (
+          {(['live', 'complete'] as const).map(s => (
             <button key={s} onClick={() => setStatus(s)}
               className={`px-3 py-1 rounded text-xs font-rajdhani font-semibold ${auctionState?.status === s ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
             >{s.toUpperCase()}</button>
@@ -887,7 +887,7 @@ function LiveMonitor() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Status', value: (auctionState?.status || 'pre').toUpperCase() },
+            { label: 'Status', value: (auctionState?.status || 'live').toUpperCase() },
             { label: 'Sold', value: soldCount },
             { label: 'Unsold', value: unsoldCount },
             { label: 'Available', value: players.filter(p => p.status === 'available').length },

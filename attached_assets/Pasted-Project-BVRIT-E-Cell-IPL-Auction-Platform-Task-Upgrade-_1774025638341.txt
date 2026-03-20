@@ -1,0 +1,163 @@
+Project: BVRIT E-Cell IPL Auction Platform
+Task: Upgrade the projector display section so it shows full player statistics in the same broadcast-style format as the reference cards from the uploaded PDFs.
+
+Goal:
+Build a premium full-screen projector display that shows the current auction player with large visual presence and detailed statistics, while keeping all strategic information hidden from teams. The display should feel like a TV broadcast or auction command center.
+
+1. Use a broadcast-style card layout for the current player
+1.1. The projector display must center on one current player at a time.
+1.2. Show the player portrait in a large framed area on the left side.
+1.3. Use a clean, premium frame around the portrait, similar to a sports auction card.
+1.4. Show the player name in large bold text below the portrait.
+1.5. Show the player country and role in a strong top-right banner.
+1.6. Keep the design dark, high-contrast, and readable from a distance.
+
+2. Display the player statistics in a structured panel
+2.1. The stats panel should be on the right side of the current player card.
+2.2. Use the same style as the reference:
+     - a header row with stat labels
+     - three format rows
+     - base price row at the bottom
+2.3. For bowlers, show:
+     - MTS
+     - WKTS
+     - ECON
+2.4. For all-rounders, show:
+     - MTS
+     - RUNS
+     - WKTS
+2.5. For batsmen, use the batting stat template from the dataset, and do not invent values.
+2.6. The display must use the exact player record from the imported CSV or database.
+2.7. Do not hallucinate stats.
+2.8. If a stat is unavailable, show a dash rather than a fake number.
+
+3. Show format-wise statistics
+3.1. Each player card must show three separate rows for format performance.
+3.2. Use these format labels exactly as configured in the dataset:
+     - T20
+     - IPL
+     - T201
+3.3. Each row must show the relevant stat values for that format.
+3.4. Keep alignment consistent across all players.
+3.5. Keep the values large enough to read on a projector.
+3.6. The row spacing should be wide and clean, not cramped.
+
+4. Show the base price clearly
+4.1. Display the base price prominently at the bottom left of the card.
+4.2. Use the same visual weight as the reference cards.
+4.3. The base price must be clearly separated from the statistics panel.
+4.4. Format it in rupees with lakh/crore units as applicable.
+4.5. Example format:
+     - ₹2 CRORE
+     - ₹1 CRORE
+     - ₹30 LAKH
+
+5. Add the role and country as prominent visual labels
+5.1. The country should appear as a bold label at the top of the stat section.
+5.2. The role should appear beside it or as a separate banner.
+5.3. Keep the role text uppercase.
+5.4. Keep the country text uppercase.
+5.5. Match the premium sports-broadcast look.
+
+6. Keep the display informational, not strategic
+6.1. The display must show only the current player’s information.
+6.2. Do not show upcoming players.
+6.3. Do not show team balances or purses.
+6.4. Do not show leaderboard rows.
+6.5. Do not show team-by-team auction planning data.
+6.6. The projector must not leak hidden auction strategy.
+
+7. Use the player image as a key visual element
+7.1. Keep the player image large and clear.
+7.2. Crop it nicely so the face and upper body are visible.
+7.3. Use the same style of portrait emphasis seen in the reference cards.
+7.4. If an image is missing, use a placeholder avatar.
+7.5. Do not distort the image.
+7.6. Use lazy loading only if needed, but keep the current player image visible immediately.
+
+8. Add current auction status elements
+8.1. Show:
+     - current bid
+     - highest bidder
+     - auction timer
+     - sold / unsold state
+8.2. Keep these elements secondary to the player statistics.
+8.3. The stats must remain the main focus on the projector.
+8.4. Use a sold ticker or lower banner for status changes.
+
+9. Maintain role-specific stat rendering logic
+9.1. Create a reusable stat template system based on player role.
+9.2. The template should select the correct labels and values for:
+     - batsman
+     - bowler
+     - all-rounder
+     - wicketkeeper
+9.3. Do not hardcode one layout for all roles if it breaks readability.
+9.4. Use the imported data schema as the source of truth.
+9.5. If the role changes, the display must automatically render the correct template.
+
+10. Make the display projector-ready
+10.1. Use a 16:9 full-screen layout.
+10.2. Ensure all text remains readable on a large screen.
+10.3. Use high contrast colors.
+10.4. Keep spacing wide enough for distant viewing.
+10.5. Avoid clutter.
+10.6. Make the display feel like a professional live event broadcast.
+
+11. Admin-only and public-view separation
+11.1. The projector display should only show safe broadcast information.
+11.2. The admin panel may show extra hidden details, but the projector display must not.
+11.3. Use a separate data view for projector and admin.
+11.4. The projector must not reuse admin-only components that reveal upcoming players or private data.
+
+12. Data model expectations
+12.1. Each player object should contain at least:
+     - name
+     - country
+     - role
+     - basePrice
+     - imageUrl
+     - stats by format
+     - current status
+12.2. The display must read directly from this model.
+12.3. If any field is missing, show a safe fallback and never guess.
+
+13. Visual style requirements
+13.1. Use a premium auction-broadcast visual theme.
+13.2. Use strong section borders and geometric framing.
+13.3. Keep typography bold and clean.
+13.4. Use a polished dark background.
+13.5. Add subtle glow/accent details if needed.
+13.6. Do not over-animate.
+
+14. Functional behavior
+14.1. When the admin selects a new player, update the projector immediately.
+14.2. When the bid changes, the projector should update live.
+14.3. When the player is sold, show sold state clearly.
+14.4. When paused, show paused state clearly.
+14.5. Keep the timer synchronized with auction state.
+
+15. Acceptance criteria
+15.1. The projector display shows a large player portrait.
+15.2. It shows country and role clearly.
+15.3. It shows format-wise stats in rows.
+15.4. It shows base price clearly.
+15.5. It shows current bid and timer.
+15.6. It hides upcoming players, team balances, and leaderboards.
+15.7. It works for bowler, all-rounder, batsman, and wicketkeeper templates.
+15.8. It looks clean, premium, and readable on a projector.
+
+16. Deliverables
+16.1. Update the display page component.
+16.2. Add role-based stat templates.
+16.3. Connect display to current auction state.
+16.4. Remove any leakage from the projector view.
+16.5. Ensure it is visually aligned with the reference card style.
+16.6. Keep the admin-only views separate from the projector view.
+
+Important:
+- Do not invent stats.
+- Do not show hidden auction information.
+- Do not show upcoming players.
+- Keep the projector display focused on the current player and their statistics only.
+- Preserve the premium auction-card style from the reference images.

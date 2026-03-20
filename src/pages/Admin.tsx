@@ -277,7 +277,6 @@ function AuctionControl() {
         </div>
         <span className="font-mono text-sm text-muted-foreground">Sold: {soldCount}</span>
         <span className="font-mono text-sm text-muted-foreground">Value: {formatPrice(totalValue)}</span>
-        <span className="font-mono text-sm text-muted-foreground">Phase: {(auctionState?.current_phase || 'marquee').toUpperCase()}</span>
         <ConnectionStatus className="ml-1" />
         <button onClick={() => { const m = toggleMute(); setMuted(m); }} className="ml-1 p-1.5 rounded hover:bg-muted/50 text-muted-foreground" title={muted ? 'Unmute' : 'Mute'}>
           {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}

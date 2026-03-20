@@ -123,7 +123,6 @@ export default function Display() {
           <span className="font-rajdhani text-xs text-muted-foreground">SOLD: <span className="text-accent-gold font-bold">{stats.sold}</span></span>
           <span className="font-rajdhani text-xs text-muted-foreground">UNSOLD: <span className="text-accent-crimson font-bold">{stats.unsold}</span></span>
           <span className="font-rajdhani text-xs text-muted-foreground">REMAINING: <span className="font-bold text-foreground">{stats.available}</span></span>
-          <span className="font-rajdhani text-xs text-muted-foreground">PHASE: <span className="font-bold text-foreground">{(auctionState?.current_phase || '—').toUpperCase()}</span></span>
         </div>
         <ConnectionStatus />
       </div>

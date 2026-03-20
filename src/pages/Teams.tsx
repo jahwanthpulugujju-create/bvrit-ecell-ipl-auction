@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuction, formatPrice } from '@/context/AuctionContext';
-import PlayerCard from '@/components/PlayerCard';
 import AuctionTimer, { TimerBar } from '@/components/AuctionTimer';
 import { roleEmojis } from '@/data/players';
 import { verifyTeamPassword } from '@/data/teams';
@@ -15,43 +14,36 @@ const MIN_REQ: Record<string, number> = {
 };
 
 export default function Teams() {
-  const { teams, players } = useAuction();
+  const { teams } = useAuction();
 
   return (
     <div className="min-h-screen bg-background pt-20 pb-12">
       <div className="container mx-auto px-4">
-        <h1 className="section-title mb-8">All <span className="text-accent-cyan">Teams</span></h1>
+        <h1 className="section-title mb-2">Participating <span className="text-accent-cyan">Teams</span></h1>
+        <p className="text-muted-foreground text-sm mb-8">Select your team and authenticate to access your private dashboard.</p>
         {teams.length === 0 ? (
           <div className="glass-card p-12 text-center">
             <p className="text-muted-foreground">No teams have been created yet. Check back soon!</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {teams.map(team => {
-              const pursePct = (team.purse / (team.initial_purse || 12000)) * 100;
-              const squadSize = players.filter(p => p.soldToTeamId === team.id).length;
-              return (
-                <Link key={team.id} to={`/team/${team.slug}`}
-                  className="glass-card p-6 hover:border-accent-cyan/30 hover:-translate-y-1 transition-all duration-200 block"
-                  style={{ borderTopColor: team.color, borderTopWidth: 3 }}
-                >
-                  <h3 className="font-exo font-bold text-lg text-foreground mb-1">{team.name}</h3>
-                  <p className="text-xs text-muted-foreground mb-4">{team.city}</p>
-                  <div className="flex items-baseline justify-between mb-2">
-                    <span className="text-xs font-rajdhani text-muted-foreground tracking-wider">PURSE</span>
-                    <span className={`font-mono font-bold text-lg ${pursePct > 60 ? 'text-accent-emerald' : pursePct > 20 ? 'text-accent-gold' : 'text-accent-crimson'}`}>
-                      {formatPrice(team.purse)}
-                    </span>
-                  </div>
-                  <div className="w-full h-2 bg-muted rounded-full overflow-hidden mb-4">
-                    <div className={`h-full rounded-full transition-all ${pursePct > 60 ? 'bg-accent-emerald' : pursePct > 20 ? 'bg-accent-gold' : 'bg-accent-crimson'}`} style={{ width: `${pursePct}%` }} />
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-mono">{squadSize}</span> players · <span className="font-mono">{team.rtm_remaining}</span> RTM cards
-                  </div>
-                </Link>
-              );
-            })}
+            {teams.map(team => (
+              <Link key={team.id} to={`/team/${team.slug}`}
+                className="glass-card p-6 hover:border-accent-cyan/30 hover:-translate-y-1 transition-all duration-200 block"
+                style={{ borderTopColor: team.color, borderTopWidth: 3 }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="w-2 h-8 rounded-sm flex-shrink-0" style={{ background: team.color }} />
+                  <Lock size={14} className="text-muted-foreground" />
+                </div>
+                <h3 className="font-exo font-bold text-lg text-foreground mb-1">{team.name}</h3>
+                <p className="text-xs text-muted-foreground mb-4">Private team dashboard</p>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Lock size={11} />
+                  <span>Authentication required</span>
+                </div>
+              </Link>
+            ))}
           </div>
         )}
       </div>
@@ -74,7 +66,7 @@ function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): nu
 }
 
 function FreezeBanner({ teamId }: { teamId: string }) {
-  const { freezes, auctionState, getPlayer } = useAuction();
+  const { freezes, auctionState } = useAuction();
   const currentPlayerId = auctionState?.current_player_id;
   const freeze = freezes.find(f =>
     f.team_id === teamId &&
@@ -133,7 +125,7 @@ function FreezeBanner({ teamId }: { teamId: string }) {
         </div>
         <div>
           <div className="font-rajdhani font-bold text-accent-gold tracking-wider">🔒 BID COOLDOWN ACTIVE</div>
-          <div className="text-xs text-muted-foreground">Your team cannot bid for {secs} more second{secs !== 1 ? 's' : ''}. The cooldown resets when you bid higher.</div>
+          <div className="text-xs text-muted-foreground">Your team cannot bid for {secs} more second{secs !== 1 ? 's' : ''}.</div>
         </div>
       </div>
     </div>
@@ -161,7 +153,7 @@ function CountdownTimer({ expiresAt, onExpire }: { expiresAt: number | null; onE
   );
 }
 
-function AuthModal({ slug, onAuth, onClose }: { slug: string; onAuth: () => void; onClose: () => void }) {
+function AuthModal({ slug, onAuth, onClose }: { slug: string; onAuth: () => void; onClose?: () => void }) {
   const { getTeamBySlug } = useAuction();
   const team = getTeamBySlug(slug);
   const [pw, setPw] = useState('');
@@ -202,10 +194,11 @@ function AuthModal({ slug, onAuth, onClose }: { slug: string; onAuth: () => void
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md">
       <div className="bg-card border-2 border-border rounded-xl w-full max-w-sm p-6 shadow-2xl" style={team ? { borderTopColor: team.color, borderTopWidth: 3 } : {}}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-exo font-bold text-foreground">Authenticate</h3>
-          <button onClick={onClose} className="p-1 rounded hover:bg-muted/50 text-muted-foreground"><X size={16} /></button>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-exo font-bold text-foreground">{team ? team.name : 'Team Login'}</h3>
+          {onClose && <button onClick={onClose} className="p-1 rounded hover:bg-muted/50 text-muted-foreground"><X size={16} /></button>}
         </div>
+        <p className="text-xs text-muted-foreground mb-4">Enter your team password to access the private dashboard.</p>
         {lockout > 0 ? (
           <div className="text-center py-6">
             <div className="text-accent-crimson font-rajdhani font-bold mb-2">🔒 Too Many Attempts</div>
@@ -226,10 +219,7 @@ function AuthModal({ slug, onAuth, onClose }: { slug: string; onAuth: () => void
               </button>
             </div>
             {error && <p className="text-accent-crimson text-xs mb-3">{error}</p>}
-            <div className="flex gap-2">
-              <button onClick={handleSubmit} className="btn-primary flex-1">Authenticate</button>
-              <button onClick={onClose} className="btn-ghost px-4">Cancel</button>
-            </div>
+            <button onClick={handleSubmit} className="btn-primary w-full">Authenticate</button>
           </>
         )}
       </div>
@@ -261,6 +251,7 @@ function AnnouncementBanner() {
 
 export function TeamDashboard() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const { auctionState, players, teams, freezes, rtmState, getTeamBySlug, getPlayer, useRtm, declineRtm } = useAuction();
   const { toast } = useToast();
 
@@ -268,15 +259,14 @@ export function TeamDashboard() {
   const currentPlayer = auctionState?.current_player_id ? getPlayer(auctionState.current_player_id) : null;
   const leadingTeam = auctionState?.leading_team_id ? teams.find(t => t.id === auctionState.leading_team_id) : null;
   const timerSeconds = useLocalTimer(auctionState?.timer_expires_at ?? null, auctionState?.timer_running ?? false);
+  const isPaused = auctionState?.status === 'live' && !auctionState?.timer_running && currentPlayer;
 
   const [authenticated, setAuthenticated] = useState(() =>
     slug ? sessionStorage.getItem(`team_auth_${slug}`) === '1' : false
   );
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [activeMobileTab, setActiveMobileTab] = useState<'auction' | 'squad' | 'queue'>('auction');
+  const [activeMobileTab, setActiveMobileTab] = useState<'auction' | 'squad'>('auction');
 
   const squadPlayers = team ? players.filter(p => p.soldToTeamId === team.id) : [];
-  const availablePlayers = players.filter(p => p.status === 'available').slice(0, 10);
   const isLeading = team && auctionState?.leading_team_id === team.id;
 
   const rtmEligible = rtmState?.active && rtmState.eligible_team_id === team?.id;
@@ -315,15 +305,19 @@ export function TeamDashboard() {
     );
   }
 
+  if (!authenticated) {
+    return <AuthModal slug={slug!} onAuth={() => setAuthenticated(true)} />;
+  }
+
   const pursePct = (team.purse / (team.initial_purse || 12000)) * 100;
 
   const MobileTabs = () => (
     <div className="flex gap-1 p-1 bg-card border border-border rounded-xl mb-4 md:hidden">
-      {(['auction', 'squad', 'queue'] as const).map(tab => (
+      {(['auction', 'squad'] as const).map(tab => (
         <button key={tab} onClick={() => setActiveMobileTab(tab)}
           className={`flex-1 py-2 rounded-lg text-sm font-rajdhani font-semibold transition-all ${activeMobileTab === tab ? 'bg-accent-cyan/10 text-accent-cyan' : 'text-muted-foreground'}`}
         >
-          {tab === 'auction' ? '🔴 Live' : tab === 'squad' ? '🏏 Squad' : '📋 Queue'}
+          {tab === 'auction' ? '🔴 Live' : '🏏 Squad'}
         </button>
       ))}
     </div>
@@ -343,14 +337,11 @@ export function TeamDashboard() {
               <div className="text-xs text-muted-foreground mt-1">Your RTM card is available to use</div>
             </div>
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4">
-                <img src={rtmPlayer.photo} alt={rtmPlayer.name} className="w-16 h-16 rounded-xl border-2 border-accent-purple/40 object-cover" />
-                <div>
-                  <div className="font-exo font-bold text-xl text-foreground">{rtmPlayer.name}</div>
-                  <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${rtmPlayer.role}`}>
-                    {roleEmojis[rtmPlayer.role]} {rtmPlayer.role.replace('-', ' ').toUpperCase()}
-                  </span>
-                </div>
+              <div>
+                <div className="font-exo font-bold text-xl text-foreground">{rtmPlayer.name}</div>
+                <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${rtmPlayer.role}`}>
+                  {roleEmojis[rtmPlayer.role]} {rtmPlayer.role.replace('-', ' ').toUpperCase()}
+                </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -366,27 +357,17 @@ export function TeamDashboard() {
 
               <CountdownTimer expiresAt={rtmState!.timer_expires_at} onExpire={handleRtmExpire} />
 
-              {!authenticated ? (
-                <button onClick={() => setShowAuthModal(true)} className="w-full btn-primary flex items-center justify-center gap-2 py-3">
-                  <Lock size={16} /> Authenticate to Use RTM
+              <div className="flex gap-3">
+                <button onClick={handleUseRtm}
+                  disabled={!team.rtm_remaining || team.purse < (rtmState?.matched_price ?? 0)}
+                  className="flex-1 btn-primary py-3 disabled:opacity-50">
+                  USE RTM — Match {formatPrice(rtmState!.matched_price)}
                 </button>
-              ) : (
-                <div className="flex gap-3">
-                  <button onClick={handleUseRtm}
-                    disabled={!team.rtm_remaining || team.purse < (rtmState?.matched_price ?? 0)}
-                    className="flex-1 btn-primary py-3 disabled:opacity-50">
-                    USE RTM — Match {formatPrice(rtmState!.matched_price)}
-                  </button>
-                  <button onClick={handleDeclineRtm} className="btn-ghost px-4">Decline</button>
-                </div>
-              )}
+                <button onClick={handleDeclineRtm} className="btn-ghost px-4">Decline</button>
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      {showAuthModal && slug && (
-        <AuthModal slug={slug} onAuth={() => { setAuthenticated(true); setShowAuthModal(false); }} onClose={() => setShowAuthModal(false)} />
       )}
 
       <div className="container mx-auto px-4 pt-4">
@@ -396,7 +377,7 @@ export function TeamDashboard() {
             <div className="w-3 h-12 rounded-sm" style={{ background: team.color }} />
             <div>
               <h1 className="font-exo font-black text-2xl text-foreground">{team.name}</h1>
-              <p className="text-xs text-muted-foreground">{team.city}</p>
+              <p className="text-xs text-muted-foreground">Private Team Dashboard</p>
             </div>
           </div>
           <div className="text-right flex items-center gap-4">
@@ -429,43 +410,52 @@ export function TeamDashboard() {
                   <span className="w-2 h-2 rounded-full bg-accent-emerald animate-pulse" /> LIVE AUCTION
                 </div>
 
-                <div className="flex items-start gap-4 mb-6">
-                  <img src={currentPlayer.photo} alt={currentPlayer.name} className="w-20 h-20 rounded-xl border-2 border-accent-cyan/30 object-cover" />
-                  <div>
-                    <h2 className="font-exo font-bold text-2xl text-foreground">{currentPlayer.name}</h2>
-                    <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${currentPlayer.role}`}>
-                      {roleEmojis[currentPlayer.role]} {currentPlayer.role.replace('-', ' ').toUpperCase()}
-                    </span>
-                    <div className="text-xs text-muted-foreground mt-1">{currentPlayer.subRole} · {currentPlayer.nationality.toUpperCase()}</div>
+                <div className="mb-6">
+                  <h2 className="font-exo font-bold text-2xl text-foreground">{currentPlayer.name}</h2>
+                  <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${currentPlayer.role}`}>
+                    {roleEmojis[currentPlayer.role]} {currentPlayer.role.replace('-', ' ').toUpperCase()}
+                  </span>
+                  <div className="text-xs text-muted-foreground mt-1">{currentPlayer.subRole} · {currentPlayer.nationality.toUpperCase()}</div>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'BAT', value: currentPlayer.batting },
+                      { label: 'BOWL', value: currentPlayer.bowling },
+                      { label: 'FIELD', value: currentPlayer.fielding },
+                    ].map(s => (
+                      <div key={s.label} className="bg-card/60 border border-border rounded-lg px-2 py-1.5 text-center">
+                        <div className="text-[9px] font-rajdhani text-muted-foreground">{s.label}</div>
+                        <div className="font-mono text-sm font-bold text-accent-gold">{s.value}</div>
+                      </div>
+                    ))}
                   </div>
                 </div>
 
-                <div className="text-center mb-6">
-                  <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1">CURRENT BID</div>
-                  <div className="font-mono text-5xl font-bold text-accent-cyan text-glow-cyan">{formatPrice(auctionState.current_bid_amount)}</div>
-                  {leadingTeam && (
-                    <div className="mt-2 font-exo text-lg" style={{ color: leadingTeam.color }}>
-                      {leadingTeam.id === team.id ? '🏆 YOUR BID IS LEADING' : `Leading: ${leadingTeam.name}`}
+                {isPaused ? (
+                  <div className="bg-accent-gold/10 border border-accent-gold/40 rounded-xl p-4 text-center mb-4">
+                    <div className="font-orbitron text-lg font-bold text-accent-gold tracking-widest">⏸ PAUSED</div>
+                    <div className="text-xs text-muted-foreground mt-1">Auction paused by the auctioneer</div>
+                  </div>
+                ) : (
+                  <div className="text-center mb-6">
+                    <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-1">CURRENT BID</div>
+                    <div className="font-mono text-5xl font-bold text-accent-cyan text-glow-cyan">{formatPrice(auctionState.current_bid_amount)}</div>
+                    {leadingTeam && (
+                      <div className="mt-2 font-exo text-lg" style={{ color: leadingTeam.color }}>
+                        {leadingTeam.id === team.id ? '🏆 YOUR BID IS LEADING' : `Leading: ${leadingTeam.name}`}
+                      </div>
+                    )}
+                    <div className="text-center mb-4 mt-4">
+                      <AuctionTimer seconds={timerSeconds} />
+                      <TimerBar seconds={timerSeconds} max={auctionState.bid_reset_seconds || 15} />
                     </div>
-                  )}
-                </div>
-
-                <div className="text-center mb-4">
-                  <AuctionTimer seconds={timerSeconds} />
-                  <TimerBar seconds={timerSeconds} max={auctionState.bid_reset_seconds || 15} />
-                </div>
+                  </div>
+                )}
 
                 {isLeading && (
                   <div className="bg-accent-emerald/10 border border-accent-emerald/30 rounded-xl p-3 text-center mb-4">
                     <div className="font-rajdhani font-bold text-accent-emerald tracking-wider">🎉 YOU ARE THE HIGHEST BIDDER</div>
                     <div className="text-xs text-muted-foreground mt-1">Wait for the auctioneer to confirm the sale</div>
                   </div>
-                )}
-
-                {!authenticated && (
-                  <button onClick={() => setShowAuthModal(true)} className="w-full btn-ghost flex items-center justify-center gap-2 py-3 mb-2">
-                    <Lock size={16} /> Unlock RTM & Verify Identity
-                  </button>
                 )}
               </div>
             ) : (
@@ -525,24 +515,6 @@ export function TeamDashboard() {
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        </div>
-
-        {/* Upcoming queue */}
-        <div className={`mt-4 ${activeMobileTab !== 'queue' ? 'hidden md:block' : ''}`}>
-          <div className="glass-card p-4">
-            <div className="text-xs font-rajdhani text-muted-foreground tracking-wider mb-3">UPCOMING PLAYERS</div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {availablePlayers.slice(0, 5).map(p => (
-                <div key={p.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted/30">
-                  <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy" />
-                  <div className="min-w-0">
-                    <div className="text-xs font-medium text-foreground truncate">{p.name}</div>
-                    <div className="font-mono text-[10px] text-accent-cyan">{formatPrice(p.basePrice)}</div>
-                  </div>
-                </div>
-              ))}
             </div>
           </div>
         </div>

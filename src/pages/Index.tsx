@@ -21,20 +21,19 @@ function FloatingOrb({ delay, x, y, size, color }: { delay: number; x: string; y
 export default function Landing() {
   const steps = [
     { icon: '🔒', title: 'RETENTION', desc: 'Teams retain key players from previous seasons' },
-    { icon: '🎙️', title: 'AUCTION BEGINS', desc: 'Players enter the pool, bidding starts' },
+    { icon: '🎙️', title: 'AUCTION BEGINS', desc: 'Players enter the pool, bidding starts live' },
     { icon: '💰', title: 'BID & WIN', desc: 'Strategic bidding to build your dream team' },
     { icon: '🏆', title: 'RESULTS', desc: 'Final squads revealed, champions emerge' },
   ];
 
   const features = [
     { icon: <Zap className="w-8 h-8 text-accent-cyan" />, title: 'Auctioneer Panel', desc: 'Full control of the auction flow with real-time bid registration', link: '/admin' },
-    { icon: <Users className="w-8 h-8 text-accent-orange" />, title: 'Team Dashboards', desc: 'Live squad updates, purse tracking, and RTM controls', link: '/teams' },
+    { icon: <Users className="w-8 h-8 text-accent-orange" />, title: 'Team Dashboards', desc: 'Private team consoles — authenticate to access your squad and auction controls', link: '/teams' },
     { icon: <Trophy className="w-8 h-8 text-accent-gold" />, title: 'Projector Display', desc: 'Full-screen auction display for the stadium audience', link: '/display' },
   ];
 
   const timeline = [
     { label: 'Retention Window Opens', date: 'TBA' },
-    { label: 'Player Pool Released', date: 'TBA' },
     { label: 'Strategy Session', date: 'TBA' },
     { label: 'Live Auction Day 1', date: '25 Mar 2026' },
     { label: 'Live Auction Day 2', date: '26 Mar 2026' },
@@ -89,8 +88,8 @@ export default function Landing() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7 }}
           >
-            <Link to="/players" className="btn-secondary glow-orange flex items-center gap-2 justify-center">
-              View Players <ChevronRight size={18} />
+            <Link to="/teams" className="btn-secondary glow-orange flex items-center gap-2 justify-center">
+              Team Login <ChevronRight size={18} />
             </Link>
             <Link to="/display" className="btn-ghost flex items-center gap-2 justify-center">
               📺 Open Display

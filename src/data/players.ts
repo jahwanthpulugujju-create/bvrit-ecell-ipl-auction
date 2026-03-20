@@ -587,7 +587,7 @@ const allrounders = ALLROUNDER_DATA.map((data, i) => buildAllrounder(75 + i, dat
 const wicketKeepers = WK_DATA.map((data, i) => buildWicketKeeper(150 + i, data));
 const batsmen = BATSMAN_DATA.map((data, i) => buildBatsman(182 + i, data));
 
-export const initialPlayers: Player[] = [...bowlers, ...allrounders, ...wicketKeepers, ...batsmen];
+export const initialPlayers: Player[] = [...batsmen, ...bowlers, ...allrounders, ...wicketKeepers];
 
 // Helper to get initials avatar URL (used as fallback)
 export function getInitialsAvatar(name: string, role: PlayerRole): string {

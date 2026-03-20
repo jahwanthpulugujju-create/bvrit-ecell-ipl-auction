@@ -170,7 +170,9 @@ function TeamBidButton({ team }: { team: TeamDB }) {
     if (isFrozen || isGlobal || isLeading || !canAfford) return;
     const result = await registerBid(team.id);
     if (!result.success) {
-      if (result.reason === 'PLAYER_COOLDOWN') {
+      if (result.reason === 'AUCTION_PAUSED') {
+        toast({ title: '⏸ Auction is paused — resume before bidding', variant: 'destructive' });
+      } else if (result.reason === 'PLAYER_COOLDOWN') {
         toast({ title: `⏳ ${team.name} frozen — ${result.remainingSeconds}s remaining`, variant: 'destructive' });
         playFreezeRejected();
       } else if (result.reason === 'GLOBAL_COOLDOWN') {

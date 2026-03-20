@@ -2,22 +2,50 @@ import { useState, useMemo, useEffect } from 'react';
 import { useAuction } from '@/context/AuctionContext';
 import PlayerCard from '@/components/PlayerCard';
 import { PlayerRole, PlayerCategory } from '@/data/players';
-import { Search } from 'lucide-react';
+import { Search, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const PAGE_SIZE = 24;
 
 export default function Players() {
+  const isAdmin = sessionStorage.getItem('admin_auth') === '1';
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="glass-card p-10 max-w-sm w-full text-center">
+          <Lock size={36} className="text-muted-foreground mx-auto mb-4" />
+          <h1 className="font-orbitron text-xl text-foreground mb-2">Restricted</h1>
+          <p className="text-muted-foreground text-sm mb-6">The player pool is only accessible to the admin. Please use the admin panel to view all players.</p>
+          <Link to="/admin" className="btn-primary w-full block text-center">Go to Admin</Link>
+        </div>
+      </div>
+    );
+  }
+
+  return <PlayersContent />;
+}
+
+function PlayersContent() {
   const { players } = useAuction();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<PlayerRole | 'all'>('all');
   const [catFilter, setCatFilter] = useState<PlayerCategory | 'all'>('all');
   const [natFilter, setNatFilter] = useState<'all' | 'indian' | 'overseas'>('all');
-  const [sortBy, setSortBy] = useState<'rating' | 'price' | 'name'>('rating');
+  const [sortBy, setSortBy] = useState<'role_order' | 'rating' | 'price' | 'name'>('role_order');
   const [visible, setVisible] = useState(PAGE_SIZE);
 
   useEffect(() => {
     setVisible(PAGE_SIZE);
   }, [search, roleFilter, catFilter, natFilter, sortBy]);
+
+  const roleOrder: Record<string, number> = {
+    batsman: 0,
+    'fast-bowler': 1,
+    spinner: 1,
+    'all-rounder': 2,
+    'wicket-keeper': 3,
+  };
 
   const filtered = useMemo(() => {
     let list = players;
@@ -30,6 +58,11 @@ export default function Players() {
     if (natFilter !== 'all') list = list.filter(p => p.nationality === natFilter);
 
     list = [...list].sort((a, b) => {
+      if (sortBy === 'role_order') {
+        const ra = roleOrder[a.role] ?? 99;
+        const rb = roleOrder[b.role] ?? 99;
+        return ra - rb;
+      }
       if (sortBy === 'rating') return b.rating - a.rating;
       if (sortBy === 'price') return b.basePrice - a.basePrice;
       return a.name.localeCompare(b.name);
@@ -76,7 +109,7 @@ export default function Players() {
           <div>
             <h1 className="section-title">Player Pool <span className="text-accent-cyan">2026</span></h1>
             <p className="text-muted-foreground text-sm mt-1">
-              Showing {visibleCount} of {filtered.length} players
+              Admin view — {visibleCount} of {filtered.length} players
               {filtered.length !== players.length && ` (filtered from ${players.length} total)`}
             </p>
           </div>
@@ -136,17 +169,22 @@ export default function Players() {
             ))}
           </div>
           <div className="flex gap-1.5 ml-auto">
-            {(['rating', 'price', 'name'] as const).map(s => (
+            {([
+              { value: 'role_order', label: 'ORDER' },
+              { value: 'rating', label: 'RATING' },
+              { value: 'price', label: 'PRICE' },
+              { value: 'name', label: 'NAME' },
+            ] as const).map(s => (
               <button
-                key={s}
-                onClick={() => setSortBy(s)}
+                key={s.value}
+                onClick={() => setSortBy(s.value)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-rajdhani font-semibold tracking-wider transition-all ${
-                  sortBy === s
+                  sortBy === s.value
                     ? 'bg-accent-orange text-background'
                     : 'bg-card text-muted-foreground hover:text-foreground border border-border'
                 }`}
               >
-                {s.toUpperCase()}
+                {s.label}
               </button>
             ))}
           </div>

@@ -4,7 +4,6 @@ import { Menu, X, Tv } from 'lucide-react';
 
 const navLinks = [
   { to: '/', label: 'Home' },
-  { to: '/players', label: 'Players' },
   { to: '/teams', label: 'Teams' },
   { to: '/admin', label: 'Admin' },
 ];

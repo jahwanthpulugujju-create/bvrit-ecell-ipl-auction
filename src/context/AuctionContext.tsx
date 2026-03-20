@@ -70,7 +70,7 @@ export interface FreezeConfig {
 
 export type BidResult =
   | { success: true; freezeSeconds: number }
-  | { success: false; reason: 'NO_CURRENT_PLAYER' | 'SUPABASE_ERROR' }
+  | { success: false; reason: 'NO_CURRENT_PLAYER' | 'SUPABASE_ERROR' | 'AUCTION_PAUSED' }
   | { success: false; reason: 'PLAYER_COOLDOWN'; remainingSeconds: number }
   | { success: false; reason: 'GLOBAL_COOLDOWN'; remainingSeconds: number }
   | { success: false; reason: 'INSUFFICIENT_PURSE'; purseRemaining: number };
@@ -323,6 +323,9 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     const state = auctionState;
     if (!team || !state || !state.current_player_id) {
       return { success: false, reason: 'NO_CURRENT_PLAYER' };
+    }
+    if (!state.timer_running) {
+      return { success: false, reason: 'AUCTION_PAUSED' };
     }
 
     const now = Date.now();

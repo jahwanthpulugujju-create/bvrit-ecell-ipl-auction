@@ -35,7 +35,7 @@ Single context that:
 | `/teams` | `src/pages/Teams.tsx` | Teams overview |
 | `/team/:slug` | `src/pages/Teams.tsx` (`TeamDashboard`) | Team-specific dashboard with auth |
 | `/admin` | `src/pages/Admin.tsx` | Auctioneer control panel (pw: `BVRIT2026`) |
-| `/display` | `src/pages/Display.tsx` | 5-zone projector view |
+| `/display` | `src/pages/Display.tsx` | Broadcast-style projector display with format stats card |
 
 ### Admin Password
 `BVRIT2026` — stored in `src/pages/Admin.tsx` constant, checked client-side.
@@ -54,7 +54,7 @@ src/
   lib/supabase.ts              # Supabase client
   pages/Admin.tsx              # Auctioneer panel
   pages/Teams.tsx              # Team dashboard + TeamDashboard export
-  pages/Display.tsx            # 5-zone projector view
+  pages/Display.tsx            # Broadcast-style projector view with format stats
   pages/Players.tsx            # Player pool browser
   components/AuctionTimer.tsx  # Countdown timer + TimerBar
   components/ConnectionStatus.tsx

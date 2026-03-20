@@ -459,7 +459,12 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   const startTimer = useCallback(async () => {
     const state = auctionState;
     if (!state) return;
-    const expiresAt = Date.now() + (state.bid_reset_seconds || 15) * 1000;
+    let expiresAt: number;
+    if (state.timer_expires_at !== null && state.timer_expires_at < 0) {
+      expiresAt = Date.now() + (-state.timer_expires_at);
+    } else {
+      expiresAt = Date.now() + (state.bid_reset_seconds || 15) * 1000;
+    }
     await supabase.from('auction_state').update({
       timer_running: true,
       timer_expires_at: expiresAt,
@@ -468,11 +473,17 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   }, [auctionState]);
 
   const pauseTimer = useCallback(async () => {
+    const state = auctionState;
+    if (!state) return;
+    const remainingMs = state.timer_expires_at && state.timer_expires_at > 0
+      ? Math.max(0, state.timer_expires_at - Date.now())
+      : (state.bid_reset_seconds || 15) * 1000;
     await supabase.from('auction_state').update({
       timer_running: false,
+      timer_expires_at: -remainingMs,
       updated_at: new Date().toISOString(),
     }).eq('id', 1);
-  }, []);
+  }, [auctionState]);
 
   const resetTimer = useCallback(async () => {
     await supabase.from('auction_state').update({

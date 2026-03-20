@@ -55,10 +55,16 @@ function useLocalTimer(timerExpiresAt: number | null, timerRunning: boolean): nu
   const [seconds, setSeconds] = useState(15);
   useEffect(() => {
     const tick = () => {
-      if (timerExpiresAt) setSeconds(Math.max(0, Math.floor((timerExpiresAt - Date.now()) / 1000)));
-      else setSeconds(15);
+      if (timerExpiresAt === null) {
+        setSeconds(15);
+      } else if (timerExpiresAt < 0) {
+        setSeconds(Math.max(0, Math.ceil(-timerExpiresAt / 1000)));
+      } else {
+        setSeconds(Math.max(0, Math.floor((timerExpiresAt - Date.now()) / 1000)));
+      }
     };
     tick();
+    if (!timerRunning) return;
     const iv = setInterval(tick, 500);
     return () => clearInterval(iv);
   }, [timerExpiresAt, timerRunning]);

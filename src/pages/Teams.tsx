@@ -503,7 +503,11 @@ export function TeamDashboard() {
                 <div className="space-y-2 max-h-[600px] overflow-auto">
                   {squadPlayers.map(p => (
                     <div key={p.id} className="flex items-center gap-3 p-2 rounded-lg bg-muted/30">
-                      <img src={p.photo} alt={p.name} className="w-10 h-10 rounded-lg border border-border object-cover" loading="lazy" />
+                      <div className="w-10 h-10 rounded-lg border border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
+                        <span className="font-mono text-xs font-bold text-accent-cyan">
+                          {p.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        </span>
+                      </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-foreground truncate">{p.name}</div>
                         <span className={`text-[10px] font-rajdhani role-${p.role}`}>

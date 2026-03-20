@@ -160,6 +160,7 @@ function TeamBidButton({ team }: { team: TeamDB }) {
   const isFrozen = localFreezeMs > 0;
   const isGlobal = globalMs > 0;
   const isLeading = team.id === auctionState?.leading_team_id;
+  const isPaused = auctionState?.status === 'live' && !auctionState?.timer_running && !!auctionState?.current_player_id;
   const canAfford = auctionState
     ? team.purse >= (auctionState.leading_team_id ? auctionState.current_bid_amount + auctionState.bid_increment : auctionState.current_bid_amount)
     : false;
@@ -167,7 +168,7 @@ function TeamBidButton({ team }: { team: TeamDB }) {
   const currentFreeze = freezes.find(f => f.team_id === team.id && f.player_id === currentPlayerId);
 
   async function handleClick() {
-    if (isFrozen || isGlobal || isLeading || !canAfford) return;
+    if (isFrozen || isGlobal || isLeading || !canAfford || isPaused) return;
     const result = await registerBid(team.id);
     if (!result.success) {
       if (result.reason === 'AUCTION_PAUSED') {
@@ -192,16 +193,17 @@ function TeamBidButton({ team }: { team: TeamDB }) {
       <button
         onClick={handleClick}
         onContextMenu={e => { e.preventDefault(); setShowQuickView(v => !v); }}
-        disabled={!canAfford && !isFrozen}
-        title={isFrozen ? `Frozen: ${Math.ceil(localFreezeMs / 1000)}s` : isLeading ? 'Leading' : 'Right-click for quick view'}
+        disabled={(!canAfford && !isFrozen) || isPaused}
+        title={isPaused ? 'Auction paused' : isFrozen ? `Frozen: ${Math.ceil(localFreezeMs / 1000)}s` : isLeading ? 'Leading' : 'Right-click for quick view'}
         className={`relative p-3 rounded-lg text-sm font-semibold transition-all border-2 overflow-hidden ${
+          isPaused ? 'border-accent-gold/40 bg-accent-gold/5 text-muted-foreground opacity-60 cursor-not-allowed' :
           isLeading ? 'border-accent-emerald bg-accent-emerald/10 text-accent-emerald' :
           isFrozen ? 'border-accent-gold/70 bg-accent-gold/10 cursor-not-allowed' :
           justExpired ? 'border-accent-emerald bg-accent-emerald/15' :
           canAfford ? 'border-border bg-card text-foreground hover:border-accent-cyan/50 hover:-translate-y-0.5 cursor-pointer' :
           'border-border bg-card/50 text-muted-foreground opacity-50 cursor-not-allowed'
         }`}
-        style={canAfford && !isLeading && !isFrozen ? { borderColor: team.color + '60' } : {}}
+        style={canAfford && !isLeading && !isFrozen && !isPaused ? { borderColor: team.color + '60' } : {}}
       >
         {isFrozen && currentFreeze && <FreezeRingSvg freeze={currentFreeze} localFreezeMs={localFreezeMs} />}
         <div className="h-1 w-full rounded mb-2 -mx-0 absolute top-0 left-0 right-0" style={{ background: team.color }} />
@@ -315,6 +317,7 @@ function AuctionControl() {
 
   const currentPlayer = auctionState?.current_player_id ? players.find(p => p.id === auctionState.current_player_id) : null;
   const leadingTeam = auctionState?.leading_team_id ? teams.find(t => t.id === auctionState.leading_team_id) : null;
+  const isPaused = auctionState?.status === 'live' && !auctionState?.timer_running && !!currentPlayer;
 
   const availablePlayers = useMemo(() =>
     players.filter(p => p.status === 'available' && p.name.toLowerCase().includes(search.toLowerCase())).slice(0, 10),
@@ -376,7 +379,11 @@ function AuctionControl() {
           {currentPlayer ? (
             <div className="glass-card p-6">
               <div className="flex items-start gap-4 mb-6">
-                <img src={currentPlayer.photo} alt={currentPlayer.name} className="w-20 h-20 rounded-xl border-2 border-accent-cyan/30 object-cover" />
+                <div className="w-20 h-20 rounded-xl border-2 border-accent-cyan/30 bg-muted/40 flex items-center justify-center flex-shrink-0">
+                  <span className="font-orbitron font-black text-2xl text-accent-cyan">
+                    {currentPlayer.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                  </span>
+                </div>
                 <div>
                   <h2 className="font-exo font-bold text-2xl text-foreground">{currentPlayer.name}</h2>
                   <span className={`text-xs font-rajdhani font-bold px-2 py-0.5 rounded-full role-${currentPlayer.role}`}>
@@ -391,6 +398,13 @@ function AuctionControl() {
                 <div className="font-mono text-5xl font-bold text-accent-cyan text-glow-cyan mb-2">{formatPrice(auctionState?.current_bid_amount || currentPlayer.basePrice)}</div>
                 {leadingTeam && <div className="font-exo text-lg" style={{ color: leadingTeam.color }}>{leadingTeam.name}</div>}
               </div>
+
+              {isPaused && (
+                <div className="bg-accent-gold/10 border border-accent-gold/40 rounded-xl p-3 text-center mb-4">
+                  <div className="font-orbitron text-sm font-bold text-accent-gold tracking-widest">⏸ AUCTION PAUSED</div>
+                  <div className="text-xs text-muted-foreground mt-1">Bids are blocked — press Start to resume</div>
+                </div>
+              )}
 
               <div className="text-center mb-6">
                 <AuctionTimer seconds={timerSeconds} />
@@ -450,7 +464,11 @@ function AuctionControl() {
               {availablePlayers.map(p => (
                 <button key={p.id} onClick={() => setCurrentPlayer(p.id)}
                   className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors text-left">
-                  <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy" />
+                  <div className="w-8 h-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
+                    <span className="font-mono text-xs font-bold text-accent-cyan">
+                      {p.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                    </span>
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-foreground truncate">{p.name}</div>
                     <span className={`text-[10px] font-rajdhani role-${p.role} px-1.5 py-0.5 rounded`}>
@@ -573,7 +591,11 @@ function PlayerManagement() {
                   <td className="p-3 text-xs font-mono text-muted-foreground">{i + 1}</td>
                   <td className="p-3">
                     <div className="flex items-center gap-2">
-                      <img src={p.photo} alt={p.name} className="w-8 h-8 rounded-lg border border-border object-cover" loading="lazy" />
+                      <div className="w-8 h-8 rounded-lg border border-border bg-muted/40 flex items-center justify-center flex-shrink-0">
+                        <span className="font-mono text-xs font-bold text-accent-cyan">
+                          {p.name.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                        </span>
+                      </div>
                       <span className="text-sm text-foreground font-medium">{p.name}</span>
                     </div>
                   </td>

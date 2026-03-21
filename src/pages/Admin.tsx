@@ -10,6 +10,7 @@ import { toggleMute, getMuted } from '@/lib/sounds';
 import {
   Search, Play, Pause, RotateCcw, Hammer, X, Users, BarChart3, Eye, Plus,
   Download, Trash2, Edit2, Megaphone, DollarSign, EyeOff, Volume2, VolumeX,
+  AlertTriangle, RefreshCcw,
 } from 'lucide-react';
 
 
@@ -222,13 +223,29 @@ function AuctionControl() {
     auctionState, players, teams,
     setCurrentPlayer, confirmSale, markUnsold,
     startTimer, pauseTimer, resetTimer,
-    setStatus, setBidIncrement,
+    setStatus, setBidIncrement, resetAuction,
   } = useAuction();
   const { toast } = useToast();
   const [search, setSearch] = useState('');
   const [showSold, setShowSold] = useState(false);
   const [soldInfo, setSoldInfo] = useState({ player: '', team: '' });
   const [muted, setMuted] = useState(getMuted);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetTyped, setResetTyped] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetAuction = async () => {
+    if (resetTyped !== 'RESET') return;
+    setResetting(true);
+    try {
+      await resetAuction();
+      setShowResetModal(false);
+      setResetTyped('');
+      toast({ title: 'Auction Reset', description: 'All player statuses and team purses have been restored to their starting values.' });
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const timerSeconds = useLocalTimer(auctionState?.timer_expires_at ?? null, auctionState?.timer_running ?? false);
 
@@ -287,6 +304,14 @@ function AuctionControl() {
               className={`px-3 py-1 rounded text-xs font-rajdhani font-semibold ${auctionState?.status === s ? 'bg-accent-cyan text-background' : 'bg-card text-muted-foreground border border-border'}`}
             >{s.toUpperCase()}</button>
           ))}
+          <button
+            onClick={() => { setShowResetModal(true); setResetTyped(''); }}
+            className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-rajdhani font-semibold bg-red-900/60 border border-red-600/60 text-red-300 hover:bg-red-800/80 hover:text-red-100 transition-colors"
+            title="Reset entire auction"
+          >
+            <RefreshCcw size={12} />
+            RESET
+          </button>
         </div>
       </div>
 
@@ -412,6 +437,64 @@ function AuctionControl() {
           <div className="text-center animate-sold-stamp">
             <div className="font-orbitron text-6xl font-black text-accent-gold text-glow-gold border-4 border-accent-gold px-8 py-4 -rotate-12">SOLD!</div>
             <div className="font-exo text-2xl text-foreground mt-4">{soldInfo.player} → {soldInfo.team}</div>
+          </div>
+        </div>
+      )}
+
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-red-600/50 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="p-2.5 rounded-full bg-red-900/60 border border-red-600/60">
+                <AlertTriangle className="text-red-400" size={22} />
+              </div>
+              <h2 className="font-exo font-bold text-xl text-foreground">Reset Entire Auction</h2>
+            </div>
+            <p className="text-muted-foreground text-sm mb-2 leading-relaxed">
+              This will permanently erase all auction progress:
+            </p>
+            <ul className="text-sm text-muted-foreground mb-5 space-y-1.5 list-none">
+              {[
+                'All sold players returned to the pool',
+                'All team purses restored to starting amounts',
+                'RTM counts reset to 3 for every team',
+                'Entire auction log cleared',
+              ].map(item => (
+                <li key={item} className="flex items-start gap-2">
+                  <span className="text-red-400 mt-0.5">✕</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-sm font-semibold text-red-400 mb-2">
+              Type <span className="font-mono bg-red-900/40 px-1.5 py-0.5 rounded">RESET</span> to confirm:
+            </p>
+            <input
+              type="text"
+              value={resetTyped}
+              onChange={e => setResetTyped(e.target.value.toUpperCase())}
+              onKeyDown={e => { if (e.key === 'Enter') handleResetAuction(); }}
+              placeholder="Type RESET here"
+              autoFocus
+              className="w-full bg-background border border-border rounded-lg px-4 py-2.5 font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-red-500 mb-5 text-sm"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleResetAuction}
+                disabled={resetTyped !== 'RESET' || resetting}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-rajdhani font-bold text-sm bg-red-700 hover:bg-red-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <RefreshCcw size={15} />
+                {resetting ? 'Resetting…' : 'Reset Auction'}
+              </button>
+              <button
+                onClick={() => { setShowResetModal(false); setResetTyped(''); }}
+                disabled={resetting}
+                className="px-6 py-2.5 rounded-lg font-rajdhani font-semibold text-sm bg-muted/40 text-muted-foreground hover:bg-muted/60 transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

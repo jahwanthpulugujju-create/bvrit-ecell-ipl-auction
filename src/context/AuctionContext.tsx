@@ -67,6 +67,7 @@ interface AuctionContextValue {
   setStatus: (status: string) => Promise<void>;
   setPhase: (phase: string) => Promise<void>;
   setBidIncrement: (increment: number) => Promise<void>;
+  resetAuction: () => Promise<void>;
 
   useRtm: (teamId: string) => Promise<void>;
   declineRtm: () => Promise<void>;
@@ -420,6 +421,52 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
     await supabase.from('rtm_state').update({ active: false, updated_at: new Date().toISOString() }).eq('id', 1);
   }, []);
 
+  const resetAuction = useCallback(async () => {
+    const currentTeams = teams;
+
+    await Promise.all([
+      // Clear all sold players from squads
+      supabase.from('team_squads').delete().not('player_id', 'is', null),
+      // Clear auction log
+      supabase.from('auction_log').delete().not('type', 'is', null),
+      // Reset auction state to fresh
+      supabase.from('auction_state').update({
+        current_player_id: null,
+        current_bid_amount: 0,
+        leading_team_id: null,
+        timer_running: false,
+        timer_expires_at: null,
+        status: 'live',
+        updated_at: new Date().toISOString(),
+      }).eq('id', 1),
+      // Reset rtm_state
+      supabase.from('rtm_state').update({
+        active: false,
+        player_id: null,
+        eligible_team_id: null,
+        matched_price: 0,
+        timer_expires_at: null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', 1),
+    ]);
+
+    // Reset each team's purse to initial_purse and rtm_remaining to 3
+    await Promise.all(
+      currentTeams.map(team =>
+        supabase.from('teams').update({
+          purse: team.initial_purse,
+          rtm_remaining: 3,
+          updated_at: new Date().toISOString(),
+        }).eq('id', team.id)
+      )
+    );
+
+    // Clear local in-memory state
+    squadRef.current = [];
+    unsoldIdsRef.current = new Set();
+    setPlayers(derivePlayerStatuses(initialPlayers, [], new Set(), null, []));
+  }, [teams]);
+
   const getPlayer = useCallback((id: string) => players.find(p => p.id === id), [players]);
   const getTeam = useCallback((id: string) => teams.find(t => t.id === id), [teams]);
   const getTeamBySlug = useCallback((slug: string) => teams.find(t => t.slug === slug), [teams]);
@@ -429,6 +476,7 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       auctionState, players, teams, rtmState, connected,
       registerBid, setCurrentPlayer, confirmSale, markUnsold, reIntroducePlayer,
       startTimer, pauseTimer, resetTimer, setStatus, setPhase, setBidIncrement,
+      resetAuction,
       useRtm, declineRtm,
       getPlayer, getTeam, getTeamBySlug,
     }}>

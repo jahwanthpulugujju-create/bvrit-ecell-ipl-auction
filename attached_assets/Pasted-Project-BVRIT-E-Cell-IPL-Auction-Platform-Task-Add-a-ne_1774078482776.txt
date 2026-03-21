@@ -1,0 +1,266 @@
+Project: BVRIT E-Cell IPL Auction Platform
+
+Task:
+Add a new admin-only dashboard tab called “Ranking” to evaluate, score, qualify, and rank all teams after or during the auction. This should be a complete new section inside the admin page, next to Auction Control, Players, Teams, and Monitor.
+
+Important goals:
+- Rank every team in order from best to worst
+- Show whether a team is qualified or not based on squad rules
+- Show detailed team composition and auction efficiency
+- Use the existing player ratings and team spending
+- Use fewer credits by reusing current components and existing data structures as much as possible
+- Do not rebuild the whole app
+- Keep this feature admin-only
+- Make it easy to judge winners for 1st, 2nd, 3rd prize
+
+1. Add a new Admin navigation tab
+1.1. Add a new clickable tab in the admin navigation bar:
+     - Auction Control
+     - Players
+     - Teams
+     - Monitor
+     - Ranking
+1.2. The Ranking tab must appear only in the admin panel.
+1.3. Clicking Ranking opens a dedicated admin dashboard page/section.
+1.4. Use the same visual style as the existing admin tabs.
+1.5. The tab must feel like a native part of the current UI, not a separate page.
+
+2. Ranking dashboard purpose
+2.1. The dashboard must compute and display a score for every team.
+2.2. The score should be based on:
+     - total player ratings
+     - squad balance
+     - role completion
+     - budget efficiency
+     - qualification rules
+2.3. The dashboard should automatically sort teams from highest score to lowest score.
+2.4. Show rank numbers clearly: 1, 2, 3, 4, etc.
+2.5. This ranking is for evaluation and prize allocation.
+
+3. Qualification rules
+3.1. A team must qualify only if all minimum requirements are satisfied.
+3.2. The qualification rules are:
+     - minimum 11 players
+     - minimum 4 batsmen
+     - minimum 2 fast bowlers
+     - minimum 2 spinners
+     - minimum 2 wicketkeepers
+     - minimum 1 all-rounder
+3.3. If a team fails any requirement, mark it as “Not Qualified”.
+3.4. If the team qualifies, mark it as “Qualified”.
+3.5. Qualified teams can be ranked normally.
+3.6. Not-qualified teams should still appear in the ranking list, but below qualified teams, or in a separate section if easier.
+3.7. Clearly display which rule(s) failed for each not-qualified team.
+
+4. Team scoring logic
+4.1. Create a scoring system that is readable, fair, and based on the data already in the app.
+4.2. Use these components in the score:
+     - player ratings
+     - squad balance
+     - role coverage
+     - remaining budget efficiency
+     - qualification bonus
+4.3. Suggested scoring structure:
+     - Base Score = average player rating weighted by squad strength
+     - Balance Bonus = bonus for meeting the ideal composition
+     - Efficiency Bonus = bonus for spending wisely
+     - Qualification Bonus = bonus only if all minimum rules are met
+4.4. Make sure a team with a more balanced squad can outrank a team that only bought high-rated players.
+4.5. Make sure a team that spent its budget more efficiently gets rewarded.
+4.6. Keep the formula deterministic, so the same data always produces the same ranking.
+
+5. Suggested scoring formula
+5.1. Use an algorithm like this:
+     - totalPlayerRating = sum of all player ratings in the team
+     - averageRating = totalPlayerRating / numberOfPlayers
+     - roleBalanceScore = score based on how close the team is to the minimum / ideal composition
+     - budgetEfficiencyScore = reward teams that kept some budget while still building a strong squad
+     - qualificationScore = large bonus if all criteria are met
+5.2. Example formula:
+     finalScore =
+       (averageRating * 40) +
+       (roleBalanceScore * 25) +
+       (budgetEfficiencyScore * 20) +
+       (qualificationScore * 15)
+5.3. Keep the formula easy to tune from a config object.
+5.4. Do not hardcode magic numbers without exposing them in a config file.
+
+6. Team detail breakdown in the ranking dashboard
+6.1. When clicking a team in the ranking view, open a detailed panel or drawer.
+6.2. The detail panel must show:
+     - team name
+     - overall rank
+     - qualification status
+     - total score
+     - total players
+     - total batsmen
+     - total fast bowlers
+     - total spinners
+     - total wicketkeepers
+     - total all-rounders
+     - total squad rating
+     - average player rating
+     - total spent
+     - remaining purse
+     - spending efficiency
+     - list of selected players
+6.3. Show each player with:
+     - name
+     - role
+     - rating
+     - base price
+     - purchase price
+6.4. This detail panel should help the admin understand why a team is ranked where it is.
+
+7. Fast bowler and spinner classification
+7.1. If the player dataset already contains fast bowler and spinner types, use those.
+7.2. If only a generic Bowler role exists, add a small internal mapping field such as `bowlerType`.
+7.3. Accept values like:
+     - fast
+     - spin
+     - medium
+7.4. For ranking rules, only fast bowlers count toward the fast-bowler requirement.
+7.5. Only spinners count toward the spinner requirement.
+7.6. If a bowler type is not available, mark it as unknown and do not incorrectly count it.
+
+8. Prize ranking output
+8.1. The dashboard should clearly identify:
+     - 1st prize
+     - 2nd prize
+     - 3rd prize
+8.2. Show a trophy-style highlight for top 3 teams.
+8.3. Top 3 should be visually distinct from the rest.
+8.4. Allow the admin to export the ranking as CSV or PDF later if needed.
+8.5. Keep the display clean and presentation-ready.
+
+9. Sorting and tie-breakers
+9.1. Teams must be sorted by final score descending.
+9.2. If two teams have the same score, break the tie in this order:
+     - higher average rating
+     - more qualification rule coverage
+     - more remaining purse
+     - fewer missing role requirements
+     - earlier completion time of the squad if that data exists
+9.3. If still tied, keep stable sort by team creation order.
+
+10. Qualification display design
+10.1. For each team, show a small checklist:
+     - 11 players
+     - 4 batsmen
+     - 2 fast bowlers
+     - 2 spinners
+     - 2 wicketkeepers
+     - 1 all-rounder
+10.2. Use green checkmarks for satisfied rules.
+10.3. Use red cross icons for failed rules.
+10.4. The admin should instantly understand why a team is qualified or not.
+
+11. Ranking visual design
+11.1. Keep the ranking page premium and readable.
+11.2. Use cards or table rows with clear emphasis on:
+     - rank
+     - team name
+     - score
+     - qualified status
+     - total players
+     - remaining purse
+11.3. Use color coding:
+     - gold for rank 1
+     - silver for rank 2
+     - bronze for rank 3
+     - neutral for others
+11.4. Add a compact badge for “Qualified” or “Not Qualified”.
+11.5. Add a small progress bar or score bar to visually compare teams.
+11.6. Keep it consistent with the current neon auction theme.
+
+12. Data requirements
+12.1. Use the existing team, squad, player rating, and purse data already in the app.
+12.2. Do not create duplicate team state.
+12.3. Reuse the current auction state and player objects.
+12.4. If a required field does not exist, extend the current data model minimally.
+12.5. Do not break existing auction control, teams, monitor, or player import flow.
+
+13. Suggested data shape
+13.1. A team ranking object should look like this:
+{
+  teamSlug,
+  teamName,
+  score,
+  rank,
+  qualified,
+  totalPlayers,
+  batsmenCount,
+  fastBowlerCount,
+  spinnerCount,
+  wicketkeeperCount,
+  allRounderCount,
+  averageRating,
+  totalRating,
+  totalSpent,
+  remainingPurse,
+  missingRules: [],
+  players: []
+}
+13.2. Each player inside the team object should include:
+{
+  name,
+  role,
+  rating,
+  basePrice,
+  purchasePrice,
+  bowlerType
+}
+
+14. Admin-only access
+14.1. Ranking must be visible only inside the admin panel.
+14.2. Team users and public viewers must not see this ranking data.
+14.3. Do not expose detailed rankings in public display mode.
+14.4. Keep the feature fully hidden behind admin authentication.
+
+15. Performance and credit efficiency
+15.1. Reuse the existing team list and player data already in memory/store.
+15.2. Do not fetch or rebuild large new datasets unnecessarily.
+15.3. Compute ranking locally from current squad state if possible.
+15.4. Avoid expensive re-renders.
+15.5. Memoize ranking calculations so the dashboard stays fast.
+15.6. Use one reusable ranking calculation function instead of duplicating logic across components.
+15.7. Use minimal new files and minimal code churn.
+
+16. UI interactions
+16.1. Clicking the Ranking tab should load the ranking dashboard instantly.
+16.2. Clicking a team should open the detailed team breakdown.
+16.3. There should be a refresh/recompute button for manual recalculation.
+16.4. Add a short description at the top explaining that ranking is based on squad strength, qualification, and budget efficiency.
+16.5. Add a legend explaining the scoring and qualification system.
+
+17. Deliverables
+17.1. New admin tab: Ranking.
+17.2. New ranking dashboard component.
+17.3. Team scoring function.
+17.4. Qualification checker function.
+17.5. Team detail drawer/modal.
+17.6. Rank sorting and tie-breakers.
+17.7. Top 3 prize highlighting.
+17.8. Admin-only access protection.
+17.9. Minimal integration changes to current app.
+
+18. Acceptance criteria
+18.1. Ranking tab exists in admin panel.
+18.2. All teams are ranked from best to worst.
+18.3. Qualification rules are checked correctly.
+18.4. Team detail breakdown is visible.
+18.5. Minimum player composition is enforced.
+18.6. Fast bowlers and spinners are counted separately.
+18.7. Top 3 teams are clearly highlighted.
+18.8. The system uses existing data and keeps credit usage low.
+18.9. No public or team user can see the ranking dashboard.
+18.10. The ranking updates correctly as squads change.
+
+19. Important implementation note
+19.1. Keep this feature incremental.
+19.2. Do not refactor the whole codebase.
+19.3. Add only the minimum required new logic and UI to support ranking.
+19.4. Reuse current team and player structures wherever possible.
+19.5. Make the feature stable, accurate, and easy to extend later.
+
+End of task.

@@ -10,8 +10,9 @@ import { toggleMute, getMuted } from '@/lib/sounds';
 import {
   Search, Play, Pause, RotateCcw, Hammer, X, Users, BarChart3, Eye, Plus,
   Download, Trash2, Edit2, Megaphone, DollarSign, EyeOff, Volume2, VolumeX,
-  AlertTriangle, RefreshCcw,
+  AlertTriangle, RefreshCcw, Trophy,
 } from 'lucide-react';
+import RankingDashboard from '@/components/RankingDashboard';
 
 
 export default function Admin() {
@@ -59,6 +60,7 @@ export default function Admin() {
     { id: 'players', label: 'Players', icon: <Users size={16} /> },
     { id: 'teams', label: 'Teams', icon: <BarChart3 size={16} /> },
     { id: 'monitor', label: 'Monitor', icon: <Eye size={16} /> },
+    { id: 'ranking', label: 'Ranking', icon: <Trophy size={16} /> },
   ];
 
   return (

@@ -81,6 +81,7 @@ export default function Admin() {
         {activeTab === 'players' && <PlayerManagement />}
         {activeTab === 'teams' && <TeamManagement />}
         {activeTab === 'monitor' && <LiveMonitor />}
+        {activeTab === 'ranking' && <RankingDashboard />}
       </div>
     </div>
   );

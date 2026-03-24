@@ -424,6 +424,12 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
   const resetAuction = useCallback(async () => {
     const currentTeams = teams;
 
+    // Clear in-memory refs FIRST so any subscription events that fire
+    // mid-reset derive from clean state instead of stale unsold/squad data
+    squadRef.current = [];
+    unsoldIdsRef.current = new Set();
+    setPlayers(derivePlayerStatuses(initialPlayers, [], new Set(), null, []));
+
     await Promise.all([
       // Clear all sold players from squads
       supabase.from('team_squads').delete().not('player_id', 'is', null),
@@ -461,10 +467,6 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       )
     );
 
-    // Clear local in-memory state
-    squadRef.current = [];
-    unsoldIdsRef.current = new Set();
-    setPlayers(derivePlayerStatuses(initialPlayers, [], new Set(), null, []));
   }, [teams]);
 
   const getPlayer = useCallback((id: string) => players.find(p => p.id === id), [players]);

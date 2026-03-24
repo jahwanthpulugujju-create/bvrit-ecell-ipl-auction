@@ -13,7 +13,7 @@ const SCORE_WEIGHTS = {
 
 // ─── Ranking qualification rules ─────────────────────────────────────────────
 const RANK_REQUIREMENTS: { key: string; label: string; min: number }[] = [
-  { key: 'total',         label: '11 Players',          min: 11 },
+  { key: 'total',         label: '15 Players',          min: 15 },
   { key: 'batsman',       label: '4 Batsmen',           min: 4  },
   { key: 'fast-bowler',   label: '2 Fast Bowlers',      min: 2  },
   { key: 'spinner',       label: '2 Spinners',          min: 2  },

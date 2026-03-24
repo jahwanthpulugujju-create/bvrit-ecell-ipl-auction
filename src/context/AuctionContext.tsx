@@ -450,12 +450,12 @@ export function AuctionProvider({ children }: { children: ReactNode }) {
       }).eq('id', 1),
     ]);
 
-    // Reset each team's purse to initial_purse and rtm_remaining to 3
+    // Reset each team's purse to initial_purse and rtm_remaining to 0
     await Promise.all(
       currentTeams.map(team =>
         supabase.from('teams').update({
           purse: team.initial_purse,
-          rtm_remaining: 3,
+          rtm_remaining: 0,
           updated_at: new Date().toISOString(),
         }).eq('id', team.id)
       )

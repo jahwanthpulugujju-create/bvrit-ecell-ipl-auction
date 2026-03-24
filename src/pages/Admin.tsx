@@ -636,7 +636,7 @@ interface TeamForm {
 
 const defaultForm: TeamForm = {
   name: '', slug: '', city: '', color: '#00d4ff',
-  initialPurse: 120, rtmCards: 2, isActive: true, password: '', passwordHash: '',
+  initialPurse: 120, rtmCards: 0, isActive: true, password: '', passwordHash: '',
 };
 
 function TeamManagement() {

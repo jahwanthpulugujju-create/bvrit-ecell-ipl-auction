@@ -44,7 +44,7 @@ export const PLAYER_COUNTRY: Record<string, string> = {
   'Matheesha Pathirana': 'SRI LANKA', 'Dushmantha Chameera': 'SRI LANKA',
   'Wanindu Hasaranga': 'SRI LANKA', 'Kamindu Mendis': 'SRI LANKA', 'Pathum Nissanka': 'SRI LANKA',
   // Afghanistan
-  'Rashid Khan': 'AFG', 'Noor Ahmad': 'AFG', 'Allah Ghazanfar': 'AFG',
+  'Rashid Khan': 'AFG', 'Noor Ahmad': 'AFG', 'Allah Ghazanfar': 'AFG', 'Azmatullah Omarzai': 'AFG',
   // Australia
   'Mitchell Starc': 'AUS', 'Pat Cummins': 'AUS', 'Josh Hazlewood': 'AUS',
   'Nathan Ellis': 'AUS', 'Travis Head': 'AUS', 'David Warner': 'AUS',
@@ -56,12 +56,12 @@ export const PLAYER_COUNTRY: Record<string, string> = {
   'Kwena Maphaka': 'SA', 'Marco Jansen': 'SA', 'Corbin Bosch': 'SA',
   'Tristan Stubbs': 'SA', 'Aiden Markram': 'SA', 'Glenn Phillips': 'SA',
   'Heinrich Klaasen': 'SA', 'Donovan Ferreira': 'SA', 'David Miller': 'SA',
-  'Lhuan-dre Pretorius': 'SA', 'Matthew Breetzke': 'SA',
+  'Lhuan-dre Pretorius': 'SA', 'Matthew Breetzke': 'SA', 'Anrich Nortje': 'SA',
   // New Zealand
   'Trent Boult': 'NZ', 'Matt Henry': 'NZ', 'Kyle Jamieson': 'NZ',
   'Lockie Ferguson': 'NZ', 'Jacob Duffy': 'NZ', 'Rachin Ravindra': 'NZ',
   'Mitchell Santner': 'NZ', 'Finn Allen': 'NZ', 'Josh Inglis': 'NZ',
-  'Bevon Jacobs': 'NZ',
+  'Bevon Jacobs': 'NZ', 'Tim Seifert': 'NZ', 'Glen Phillips': 'NZ',
   // West Indies
   'Andre Russell': 'WI', 'Sunil Narine': 'WI', 'Akeal Hosein': 'WI',
   'Nicholas Pooran': 'WI', 'Shimron Hetmyer': 'WI', 'Rovman Powell': 'WI',
@@ -75,7 +75,7 @@ export const PLAYER_COUNTRY: Record<string, string> = {
   // Pakistan
   'Babar Azam': 'PAK',
   // Zimbabwe / Others
-  'Sikandar Raza': 'ZIM',
+  'Sikandar Raza': 'ZIM', 'Blessing Muzarabani': 'ZIM',
 };
 
 function fs(template: StatTemplate, t20: [number|null,number|null,number|null], ipl: [number|null,number|null,number|null], t201: [number|null,number|null,number|null]): PlayerFormatStats {
@@ -430,7 +430,7 @@ const PREMIUM_PLAYERS = new Set([
   // Bowlers
   'Varun Chakaravarthy','Bhuvneshwar Kumar','Harshal Patel','Deepak Chahar',
   'Lockie Ferguson','Matheesha Pathirana','Ravi Bishnoi','Khaleel Ahmed',
-  'T Natarajan','Umran Malik','Mayank Yadav','Mukesh Kumar',
+  'T Natarajan','Umran Malik','Mayank Yadav','Mukesh Kumar','Anrich Nortje',
   // All-rounders
   'Mitchell Marsh','Wanindu Hasaranga','Washington Sundar','Cameron Green',
   'Marco Jansen','Marcus Stoinis','Sam Curran','Venkatesh Iyer',
@@ -446,13 +446,13 @@ const PREMIUM_PLAYERS = new Set([
 const MID_TIER_PLAYERS = new Set([
   // Bowlers
   'Harshit Rana','Lungi Ngidi','Kyle Jamieson','Prasidh Krishna','Avesh Khan',
-  'Rahul Chahar','Yash Dayal','Tushar Deshpande','Jaydev Unadkat','Shivam Mavi',
+  'Rahul Chahar','Tushar Deshpande','Jaydev Unadkat','Shivam Mavi',
   'Mohsin Khan','Nandre Burger','Rasikh Salam','Matt Henry','Xavier Bartlett','Sandeep Sharma',
   // All-rounders
   'Jason Holder','Rahul Tewatia','Mitchell Santner','Riyan Parag','Krunal Pandya',
   'Tim David','Romario Shepherd','Jacob Bethell','Corbin Bosch','Shardul Thakur',
   'Will Jacks','Cooper Connolly','Mitchell Owen','Kamindu Mendis','Brydon Carse',
-  'Jack Edwards','Shivam Dube','Jamie Overton',
+  'Jack Edwards','Shivam Dube','Jamie Overton','Liam Livingstone','Azmatullah Omarzai',
   // Wicket-keepers
   'Dhruv Jurel','Ryan Rickelton','Finn Allen','Josh Inglis','Prabhsimran Singh',
   'Jitesh Sharma','Lhuan-dre Pretorius','Tristan Stubbs','Ben Duckett',
@@ -578,7 +578,13 @@ const BOWLER_DATA: [string, string, string, string][] = [
   ['Ishant Sharma', 'Gujarat Titans', 'Right-arm Fast Medium', 'RHB'],
   ['Rashid Khan', 'Gujarat Titans', 'Right-arm Leg Spin', 'RHB'],
   ['Manav Suthar', 'Gujarat Titans', 'Left-arm Slow Orthodox', 'LHB'],
-  ['Sai Kishore', 'Gujarat Titans', 'Left-arm Slow Orthodox', 'LHB'],
+  ['Blessing Muzarabani', 'Lucknow Super Giants', 'Right-arm Fast', 'RHB'],
+  ['Kartik Tyagi', 'Rajasthan Royals', 'Right-arm Fast', 'RHB'],
+  ['Akash Deep', 'Royal Challengers Bengaluru', 'Right-arm Fast Medium', 'RHB'],
+  ['Anrich Nortje', 'Delhi Capitals', 'Right-arm Fast', 'RHB'],
+  ['Ashwani Kumar', 'Punjab Kings', 'Right-arm Fast Medium', 'RHB'],
+  ['Digvesh Rathi', 'Lucknow Super Giants', 'Right-arm Off Spin', 'RHB'],
+  ['Zeeshan Ansari', 'Sunrisers Hyderabad', 'Right-arm Leg Spin', 'RHB'],
   ['Ashok Sharma', 'Gujarat Titans', 'Right-arm Fast', 'RHB'],
   ['Prithvi Raj', 'Gujarat Titans', 'Left-arm Fast Medium', 'RHB'],
   ['Luke Wood', 'Gujarat Titans', 'Left-arm Fast', 'LHB'],
@@ -620,13 +626,10 @@ const BOWLER_DATA: [string, string, string, string][] = [
   ['Yash Raj Punja', 'Rajasthan Royals', 'Right-arm Leg Spin', 'RHB'],
   ['Josh Hazlewood', 'Royal Challengers Bengaluru', 'Right-arm Fast Medium', 'LHB'],
   ['Bhuvneshwar Kumar', 'Royal Challengers Bengaluru', 'Right-arm Medium Fast', 'RHB'],
-  ['Yash Dayal', 'Royal Challengers Bengaluru', 'Left-arm Fast Medium', 'RHB'],
   ['Nuwan Thushara', 'Royal Challengers Bengaluru', 'Right-arm Fast Medium', 'RHB'],
   ['Rasikh Salam', 'Royal Challengers Bengaluru', 'Right-arm Fast Medium', 'RHB'],
   ['Suyash Sharma', 'Royal Challengers Bengaluru', 'Right-arm Leg Spin', 'RHB'],
   ['Jacob Duffy', 'Royal Challengers Bengaluru', 'Right-arm Fast Medium', 'RHB'],
-  ['Pat Cummins', 'Sunrisers Hyderabad', 'Right-arm Fast', 'RHB'],
-  ['Harshal Patel', 'Sunrisers Hyderabad', 'Right-arm Fast Medium', 'RHB'],
   ['Jaydev Unadkat', 'Sunrisers Hyderabad', 'Left-arm Fast Medium', 'RHB'],
   ['Shivam Mavi', 'Sunrisers Hyderabad', 'Right-arm Fast Medium', 'RHB'],
   ['Eshan Malinga', 'Sunrisers Hyderabad', 'Right-arm Fast', 'RHB'],
@@ -673,7 +676,15 @@ const ALLROUNDER_DATA: [string, string, string, string][] = [
   ['Shahbaz Ahamad', 'Lucknow Super Giants', 'LHB', 'Left-arm Slow Orthodox'],
   ['Arshin Kulkarni', 'Lucknow Super Giants', 'RHB', 'Right-arm Medium Fast'],
   ['Ayush Badoni', 'Lucknow Super Giants', 'RHB', 'Right-arm Off Spin'],
-  ['Digvesh Rathi', 'Lucknow Super Giants', 'RHB', 'Right-arm Off Spin'],
+  ['Glen Phillips', 'Rajasthan Royals', 'RHB', 'Right-arm Off Spin'],
+  ['Sameer Rizvi', 'Delhi Capitals', 'RHB', 'Right-arm Off Spin'],
+  ['Shahrukh Khan', 'Gujarat Titans', 'RHB', 'Right-arm Off Spin'],
+  ['Sai Kishore', 'Gujarat Titans', 'LHB', 'Left-arm Slow Orthodox'],
+  ['Harshal Patel', 'Sunrisers Hyderabad', 'RHB', 'Right-arm Fast Medium'],
+  ['Pat Cummins', 'Sunrisers Hyderabad', 'RHB', 'Right-arm Fast'],
+  ['Harpreet Brar', 'Punjab Kings', 'LHB', 'Left-arm Slow Orthodox'],
+  ['Azmatullah Omarzai', 'Gujarat Titans', 'RHB', 'Right-arm Fast Medium'],
+  ['Liam Livingstone', 'Punjab Kings', 'RHB', 'Right-arm Leg Spin'],
   ['Hardik Pandya', 'Mumbai Indians', 'RHB', 'Right-arm Fast Medium'],
   ['Mitchell Santner', 'Mumbai Indians', 'LHB', 'Left-arm Slow Orthodox'],
   ['Corbin Bosch', 'Mumbai Indians', 'RHB', 'Right-arm Fast Medium'],
@@ -692,7 +703,6 @@ const ALLROUNDER_DATA: [string, string, string, string][] = [
   ['Ravindra Jadeja', 'Rajasthan Royals', 'LHB', 'Left-arm Slow Orthodox'],
   ['Riyan Parag', 'Rajasthan Royals', 'RHB', 'Right-arm Leg break/Off break'],
   ['Brijesh Sharma', 'Rajasthan Royals', 'RHB', 'Right-arm Medium'],
-  ['Donovan Ferreira', 'Rajasthan Royals', 'RHB', 'Right-arm Off Spin'],
   ['Yudhvir Singh Charak', 'Rajasthan Royals', 'RHB', 'Right-arm Medium Fast'],
   ['Krunal Pandya', 'Royal Challengers Bengaluru', 'LHB', 'Left-arm Slow Orthodox'],
   ['Venkatesh Iyer', 'Royal Challengers Bengaluru', 'LHB', 'Right-arm Medium'],
@@ -712,7 +722,6 @@ const ALLROUNDER_DATA: [string, string, string, string][] = [
   ['Brydon Carse', 'Sunrisers Hyderabad', 'RHB', 'Right-arm Fast'],
   ['Harsh Dubey', 'Sunrisers Hyderabad', 'LHB', 'Left-arm Slow Orthodox'],
   ['Shivang Kumar', 'Sunrisers Hyderabad', 'RHB', 'Left-arm Slow Unorthodox'],
-  ['Zeeshan Ansari', 'Sunrisers Hyderabad', 'RHB', 'Right-arm Leg Spin'],
   ['Praful Hinge', 'Sunrisers Hyderabad', 'RHB', 'Right-arm Fast Medium'],
 ];
 
@@ -751,6 +760,8 @@ const WK_DATA: [string, string, string][] = [
   ['Heinrich Klaasen', 'Sunrisers Hyderabad', 'RHB'],
   ['Ishan Kishan', 'Sunrisers Hyderabad', 'LHB'],
   ['Salil Arora', 'Sunrisers Hyderabad', 'RHB'],
+  ['Tim Seifert', 'Kolkata Knight Riders', 'RHB'],
+  ['Donovan Ferreira', 'Rajasthan Royals', 'RHB'],
 ];
 
 // ─── Builder functions ────────────────────────────────────────────────────────
@@ -853,14 +864,14 @@ const BATSMAN_DATA: [string, string, string, string][] = [
   ['Sarfaraz Khan', 'Chennai Super Kings', 'RHB', 'Right-arm Leg Spin'],
   ['Karun Nair', 'Delhi Capitals', 'RHB', 'Right-arm Off Spin'],
   ['Prithvi Shaw', 'Delhi Capitals', 'RHB', '—'],
-  ['Sameer Rizvi', 'Delhi Capitals', 'RHB', '—'],
+  ['Rahul Tripathi', 'Sunrisers Hyderabad', 'RHB', '—'],
   ['Ashutosh Sharma', 'Delhi Capitals', 'RHB', '—'],
   ['Pathum Nissanka', 'Delhi Capitals', 'RHB', '—'],
   ['Sahil Parakh', 'Delhi Capitals', 'LHB', 'Right-arm Off Spin'],
   ['David Miller', 'Delhi Capitals', 'LHB', '—'],
   ['Shubman Gill', 'Gujarat Titans', 'RHB', 'Right-arm Off Spin'],
   ['Sai Sudharsan', 'Gujarat Titans', 'LHB', 'Right-arm Leg Spin'],
-  ['Shahrukh Khan', 'Gujarat Titans', 'RHB', 'Right-arm Off Spin'],
+  ['Nehal Wadhera', 'Punjab Kings', 'LHB', '—'],
   ['Rinku Singh', 'Kolkata Knight Riders', 'LHB', 'Right-arm Off Spin'],
   ['Angkrish Raghuvanshi', 'Kolkata Knight Riders', 'RHB', 'Right-arm Off Spin'],
   ['Ajinkya Rahane', 'Kolkata Knight Riders', 'RHB', '—'],
@@ -923,15 +934,15 @@ function buildBatsman(index: number, [name, franchise, battingStyle, bowlingStyl
 }
 
 // ─── Combine all players ───────────────────────────────────────────────────────
-// p1–p75:    Bowlers     (Sheet 2)
-// p76–p150:  All-rounders (Sheet 3)
-// p151–p182: Wicket-keepers (Sheet 4)
-// p183–p228: Batsmen    (Sheet 1)
+// p1–p78:    Bowlers       (Sheet 2, 78 players)
+// p79–p159:  All-rounders  (Sheet 3, 81 players)
+// p160–p193: Wicket-keepers (Sheet 4, 34 players)
+// p194–p239: Batsmen       (Sheet 1, 46 players)
 
 const bowlers = BOWLER_DATA.map((data, i) => buildBowler(i, data));
-const allrounders = ALLROUNDER_DATA.map((data, i) => buildAllrounder(75 + i, data));
-const wicketKeepers = WK_DATA.map((data, i) => buildWicketKeeper(150 + i, data));
-const batsmen = BATSMAN_DATA.map((data, i) => buildBatsman(182 + i, data));
+const allrounders = ALLROUNDER_DATA.map((data, i) => buildAllrounder(78 + i, data));
+const wicketKeepers = WK_DATA.map((data, i) => buildWicketKeeper(159 + i, data));
+const batsmen = BATSMAN_DATA.map((data, i) => buildBatsman(193 + i, data));
 
 export const initialPlayers: Player[] = [...batsmen, ...bowlers, ...allrounders, ...wicketKeepers];
 
